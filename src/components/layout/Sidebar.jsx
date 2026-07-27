@@ -6,7 +6,7 @@ import { auth } from '../../lib/firebase';
 import { useAuthStore } from '../../store/authStore';
 import { subscribeConversations } from '../../services/firestoreService';
 import { useEffect, useState } from 'react';
-import { Home, CheckSquare, Trophy, Gift, Globe, MessageCircle, Info, ShieldAlert, Zap, LogOut } from 'lucide-react';
+import { Home, CheckSquare, Trophy, Gift, Globe, MessageCircle, Info, ShieldAlert, Zap, LogOut, Flame } from 'lucide-react';
 import PremiumIcon from '../common/PremiumIcon';
 import Avatar from '../common/Avatar';
 import styles from './Sidebar.module.css';
@@ -16,15 +16,22 @@ const NAV_ITEMS = [
   { path: '/tasks', icon: <PremiumIcon icon={CheckSquare} color="sapphire" size={20} />, label: 'Tasks' },
   { path: '/leaderboard', icon: <PremiumIcon icon={Trophy} color="gold" size={20} />, label: 'Leaderboard' },
   { path: '/rewards', icon: <PremiumIcon icon={Gift} color="ruby" size={20} />, label: 'Rewards' },
+  { path: '/arena', icon: <PremiumIcon icon={Flame} color="ruby" size={20} />, label: 'Arena' },
   { path: '/community', icon: <PremiumIcon icon={Globe} color="emerald" size={20} />, label: 'Community' },
   { path: '/messages', icon: <PremiumIcon icon={MessageCircle} color="amethyst" size={20} />, label: 'Messages' },
   { path: '/about', icon: <PremiumIcon icon={Info} color="slate" size={20} />, label: 'About' },
 ];
 
+import { useSettingsStore } from '../../store/settingsStore';
+
 export default function Sidebar() {
   const { user, profile } = useAuthStore();
+  const settings = useSettingsStore(s => s.settings) || {};
+  const arenaEnabled = settings.arenaEnabled ?? true;
   const navigate = useNavigate();
   const [unreadCount, setUnreadCount] = useState(0);
+
+  const visibleNavItems = NAV_ITEMS.filter(item => item.path !== '/arena' || arenaEnabled);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -54,7 +61,7 @@ export default function Sidebar() {
       {/* Nav Links */}
       <nav className={styles.nav}>
         <div className={styles.navInner}>
-          {NAV_ITEMS.map((item) => (
+          {visibleNavItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}

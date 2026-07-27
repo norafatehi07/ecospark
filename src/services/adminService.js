@@ -1,5 +1,5 @@
 import { db } from '../lib/firebase';
-import { collection, getDocs, doc, updateDoc, increment, deleteDoc, getDoc, query, where, orderBy, getCountFromServer, serverTimestamp, Timestamp, setDoc, arrayUnion } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, increment, deleteDoc, getDoc, query, where, orderBy, getCountFromServer, serverTimestamp, Timestamp, setDoc, arrayUnion, limit } from 'firebase/firestore';
 
 export async function getAdminUsers() {
   const usersSnap = await getDocs(collection(db, 'users'));
@@ -283,5 +283,69 @@ export async function updateGlobalSettings(updates) {
   const settingsRef = doc(db, 'settings', 'global');
   // Use setDoc with merge to create it if it doesn't exist
   await setDoc(settingsRef, { ...updates, updatedAt: serverTimestamp() }, { merge: true });
+  return { success: true };
+}
+
+export async function adminForceWeeklyReset() {
+  // 1. Fetch top 3 users by weeklyPoints
+  const topQ = query(collection(db, 'leaderboard'), orderBy('weeklyPoints', 'desc'), limit(3));
+  const topSnap = await getDocs(topQ);
+  
+  const rewards = [10000, 5000, 2500];
+  const promises = [];
+  
+  topSnap.docs.forEach((docSnap, index) => {
+    const userId = docSnap.id;
+    const rewardPoints = rewards[index];
+    if (!rewardPoints) return;
+    
+    // Update the main user document
+    const userRef = doc(db, 'users', userId);
+    let updates = {
+      points: increment(rewardPoints),
+      lifetimePoints: increment(rewardPoints),
+      spendableBalance: increment(rewardPoints),
+    };
+    if (index === 0) {
+      updates.unlockedFrames = arrayUnion('frame-champion');
+    }
+    
+    promises.push(updateDoc(userRef, updates));
+    
+    // Add transaction history
+    const txRef = doc(collection(db, 'transactions'));
+    promises.push(setDoc(txRef, {
+      userId: userId,
+      type: 'earned',
+      amount: rewardPoints,
+      description: `Weekly Leaderboard Reward (Rank #${index + 1})`,
+      createdAt: serverTimestamp(),
+    }));
+    
+    // Create notification
+    const notifRef = doc(collection(db, 'notifications'));
+    promises.push(setDoc(notifRef, {
+      userId: userId,
+      type: 'weekly_reward',
+      title: `🏆 You placed #${index + 1} this week!`,
+      body: `You've been awarded ${rewardPoints} bonus points${index === 0 ? ' and an exclusive Champion Frame' : ''} for your amazing eco-efforts!`,
+      read: false,
+      createdAt: serverTimestamp(),
+    }));
+  });
+  
+  // Wait for rewards to be applied
+  await Promise.all(promises);
+  
+  // 2. Reset weeklyPoints for all users
+  const usersSnap = await getDocs(collection(db, 'users'));
+  const userUpdates = usersSnap.docs.map(d => updateDoc(d.ref, { weeklyPoints: 0 }));
+  await Promise.all(userUpdates);
+  
+  // 3. Reset weeklyPoints for leaderboard collection
+  const lbSnap = await getDocs(collection(db, 'leaderboard'));
+  const lbUpdates = lbSnap.docs.map(d => updateDoc(d.ref, { weeklyPoints: 0 }));
+  await Promise.all(lbUpdates);
+  
   return { success: true };
 }

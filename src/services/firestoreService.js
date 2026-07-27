@@ -110,15 +110,30 @@ export async function updateUserProfile(uid, updates) {
     ...updates,
     updatedAt: serverTimestamp(),
   });
-  // Sync displayName, photoURL, and privacy setting to leaderboard doc if changed
-  if (updates.displayName || updates.photoURL !== undefined || updates.showOnLeaderboard !== undefined) {
-    const lbUpdates = { updatedAt: serverTimestamp() };
-    if (updates.displayName) lbUpdates.displayName = updates.displayName;
-    if (updates.photoURL !== undefined) lbUpdates.photoURL = updates.photoURL;
-    if (updates.showOnLeaderboard !== undefined) lbUpdates.showOnLeaderboard = updates.showOnLeaderboard;
+  
+  // Sync profile data and points to leaderboard doc if changed
+  const lbUpdates = { updatedAt: serverTimestamp() };
+  let needsSync = false;
+  
+  const syncFields = ['displayName', 'photoURL', 'showOnLeaderboard', 'points', 'weeklyPoints', 'streak'];
+  for (const field of syncFields) {
+    if (updates[field] !== undefined) {
+      lbUpdates[field] = updates[field];
+      needsSync = true;
+    }
+  }
+
+  if (needsSync) {
     try {
       await updateDoc(doc(db, 'leaderboard', uid), lbUpdates);
-    } catch { /* leaderboard doc may not exist yet */ }
+    } catch { 
+      // leaderboard doc may not exist yet, set it instead
+      try {
+        await setDoc(doc(db, 'leaderboard', uid), { userId: uid, ...lbUpdates }, { merge: true });
+      } catch (e) {
+        console.error("Failed to sync leaderboard doc:", e);
+      }
+    }
   }
 }
 

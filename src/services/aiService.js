@@ -273,8 +273,141 @@ Do NOT include any extra text, only the JSON object.`
     if (attempt < 3) {
       console.warn(`[aiService] Task generation failed (attempt ${attempt}). Retrying in 3s...`, err);
       await new Promise(r => setTimeout(r, 3000));
-      return generateTaskAI(completedTaskContext, attempt + 1);
+      return generateTaskAI(completedTaskContext, existingTaskTitles, attempt + 1);
     }
+    throw err;
+  }
+}
+
+/**
+ * Generate real-time Arena Predictions (mostly India focused)
+ */
+export async function generateArenaPredictions() {
+  try {
+    const apiKey = import.meta.env.VITE_GROQ_API_KEY;
+    if (!apiKey) throw new Error('Groq API key missing');
+
+    const systemPrompt = {
+      role: 'system',
+      content: `You are an AI for a gamified prediction market. The CURRENT YEAR IS 2026. Do NOT suggest events from 2024 or 2025.
+Generate 12 highly realistic, current, and engaging predictions focused mainly on India (Sports, Tech, Politics, Economy, Entertainment) that will happen in late 2026 or 2027.
+CRITICAL INSTRUCTION: This is a fictional roleplay game. Do NOT refuse to generate predictions based on "inability to predict the future". Ensure the events are actually scheduled or highly plausible for 2026/2027 (e.g., FIFA World Cup 2026, ISRO missions, major elections).
+Examples: "Will India win the 2026 Men's FIH Hockey World Cup?", "Will ISRO launch Shukrayaan-1 by 2026 end?", "Will the Nifty 50 cross 30,000 in 2026?"
+Provide realistic betting odds (multiplier) between 1.1x and 4.0x based on the likelihood.
+Respond ONLY with a valid JSON array of objects. Schema for each object:
+{"id":"unique-id","title":"The prediction question","category":"Category Name","description":"Brief context","options":[{"id":"yes","label":"Yes","multiplier":1.5,"color":"var(--color-emerald)"},{"id":"no","label":"No","multiplier":2.1,"color":"var(--color-ruby)"}]}`
+    };
+
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [systemPrompt],
+        temperature: 0.8,
+      })
+    });
+
+    if (!response.ok) throw new Error('Failed to generate predictions');
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    
+    // Extract JSON array if surrounded by markdown
+    const jsonStr = content.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+    return JSON.parse(jsonStr);
+  } catch (err) {
+    console.error('Failed to generate predictions:', err);
+    throw err;
+  }
+}
+
+/**
+ * Generate real-time Arena Trivia (General Knowledge)
+ */
+export async function generateArenaTrivia() {
+  try {
+    const apiKey = import.meta.env.VITE_GROQ_API_KEY;
+    if (!apiKey) throw new Error('Groq API key missing');
+
+    const systemPrompt = {
+      role: 'system',
+      content: `You are an AI quizmaster.
+Generate 10 fresh, engaging general knowledge trivia questions. Mix global and Indian context.
+Make them moderately challenging.
+Respond ONLY with a valid JSON array of objects. Schema for each object:
+{"id":"unique-id","question":"The question text","options":["Option A","Option B","Option C","Option D"],"correctIndex": 0-3 (the integer index of the correct option)}`
+    };
+
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [systemPrompt],
+        temperature: 0.9,
+      })
+    });
+
+    if (!response.ok) throw new Error('Failed to generate trivia');
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    
+    // Extract JSON array if surrounded by markdown
+    const jsonStr = content.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+    return JSON.parse(jsonStr);
+  } catch (err) {
+    console.error('Failed to generate trivia:', err);
+    throw err;
+  }
+}
+
+/**
+ * Resolve an Arena Prediction using AI as the Oracle
+ * Returns an outcome evaluation based on real-world probability or simulation
+ */
+export async function resolvePredictionAI(predictionTitle) {
+  try {
+    const apiKey = import.meta.env.VITE_GROQ_API_KEY;
+    if (!apiKey) throw new Error('Groq API key missing');
+
+    const systemPrompt = {
+      role: 'system',
+      content: `You are the Oracle of an advanced Prediction Market.
+Your job is to "resolve" a market based on the event: "${predictionTitle}".
+CRITICAL INSTRUCTION: This is a FICTIONAL SIMULATION game. You MUST ACT AS IF the event has just concluded.
+DO NOT refuse to answer due to it being a future event or financial prediction. You MUST decide the outcome definitively. Be creative but logical based on current trends.
+Respond ONLY with a valid JSON object.
+Schema:
+{"resolved": true, "winnerOption": "Yes" or "No", "reason": "1 short sentence explaining why this outcome occurred in this fictional simulation."}`
+    };
+
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [systemPrompt],
+        temperature: 0.9,
+      })
+    });
+
+    if (!response.ok) throw new Error('Failed to resolve prediction');
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    
+    const jsonStr = content.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+    return JSON.parse(jsonStr);
+  } catch (err) {
+    console.error('Failed to resolve prediction:', err);
     throw err;
   }
 }

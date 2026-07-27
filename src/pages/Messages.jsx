@@ -206,18 +206,15 @@ export default function Messages() {
                     )}
                   </div>
                   <div className={styles.convInfo}>
-                    <h4 style={{ fontWeight: isUnread ? 'bold' : 'normal', color: isUnread ? 'var(--color-text)' : 'inherit' }}>
+                    <h4 style={{ fontWeight: isUnread ? 'bold' : 'normal' }}>
                       {oProf?.displayName || 'User'}
                     </h4>
-                    <p style={{ fontWeight: isUnread ? '600' : 'normal', color: isUnread ? 'var(--color-primary)' : 'inherit' }}>
+                    <p style={{ fontWeight: isUnread ? '600' : 'normal' }}>
                       {chat.lastMessage || 'New Conversation'}
                     </p>
                   </div>
                   {isUnread && (
-                    <div style={{
-                      width: 10, height: 10, background: 'var(--color-primary)',
-                      borderRadius: '50%', flexShrink: 0, alignSelf: 'center', marginLeft: 'auto'
-                    }} />
+                    <div className={styles.unreadBadge} />
                   )}
                 </div>
               );
@@ -304,6 +301,9 @@ export default function Messages() {
                           {msg.text}
                         </div>
                       )}
+                      <span className={styles.messageTimestamp}>
+                        {msg.createdAt?.toMillis ? new Date(msg.createdAt.toMillis()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Just now'}
+                      </span>
                     </div>
                   </div>
                 );
@@ -334,70 +334,72 @@ export default function Messages() {
                       )}
                     </div>
                   )}
-                  <form className={styles.messageInputForm} onSubmit={handleSend} style={{ position: 'relative' }}>
-                    <input 
-                      type="file" 
-                      accept="image/*,video/*" 
-                      ref={fileInputRef}
-                      style={{ display: 'none' }}
-                      onChange={handleAttachmentChange}
-                    />
-                    
-                    <button 
-                      type="button" 
-                      className={styles.attachBtn}
-                      onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                      disabled={sending}
-                      title="Send 3D Emoji"
-                    >
-                      <Smile size={20} />
-                    </button>
+                  <div className={styles.inputWrapper}>
+                    <form className={styles.messageInputForm} onSubmit={handleSend}>
+                      <input 
+                        type="file" 
+                        accept="image/*,video/*" 
+                        ref={fileInputRef}
+                        style={{ display: 'none' }}
+                        onChange={handleAttachmentChange}
+                      />
+                      
+                      <button 
+                        type="button" 
+                        className={styles.attachBtn}
+                        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                        disabled={sending}
+                        title="Send 3D Emoji"
+                      >
+                        <Smile size={20} />
+                      </button>
 
-                    {showEmojiPicker && (
-                      <div style={{
-                        position: 'absolute', bottom: '100%', left: 0, marginBottom: 12,
-                        background: 'var(--color-surface)', border: '1px solid var(--color-border)',
-                        borderRadius: 16, padding: 12, display: 'flex', gap: 12, zIndex: 100,
-                        boxShadow: '0 8px 24px rgba(0,0,0,0.15)'
-                      }}>
-                        {ANIMATED_EMOJIS.map((emoji, idx) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => handleSendEmoji(emoji)}
-                            style={{
-                              background: 'transparent', border: 'none', cursor: 'pointer',
-                              padding: 4, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              transition: 'transform 0.2s'
-                            }}
-                            onMouseOver={e => e.currentTarget.style.transform = 'scale(1.15)'}
-                            onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'}
-                          >
-                            <img src={emoji} alt="emoji" style={{ width: 40, height: 40, objectFit: 'contain' }} />
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                      {showEmojiPicker && (
+                        <div style={{
+                          position: 'absolute', bottom: '100%', left: 0, marginBottom: 12,
+                          background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+                          borderRadius: 16, padding: 12, display: 'flex', gap: 12, zIndex: 100,
+                          boxShadow: '0 8px 24px rgba(0,0,0,0.15)'
+                        }}>
+                          {ANIMATED_EMOJIS.map((emoji, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => handleSendEmoji(emoji)}
+                              style={{
+                                background: 'transparent', border: 'none', cursor: 'pointer',
+                                padding: 4, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                transition: 'transform 0.2s'
+                              }}
+                              onMouseOver={e => e.currentTarget.style.transform = 'scale(1.15)'}
+                              onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'}
+                            >
+                              <img src={emoji} alt="emoji" style={{ width: 40, height: 40, objectFit: 'contain' }} />
+                            </button>
+                          ))}
+                        </div>
+                      )}
 
-                    <button 
-                      type="button" 
-                      className={styles.attachBtn}
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={sending}
-                    >
-                      <Paperclip size={20} />
-                    </button>
-                    <input 
-                      type="text" 
-                      placeholder="Message..." 
-                      value={inputText}
-                      onChange={e => setInputText(e.target.value)}
-                      disabled={sending}
-                    />
-                    <button type="submit" disabled={(!inputText.trim() && !attachment) || sending}>
-                      {sending ? '...' : <Send size={20} />}
-                    </button>
-                  </form>
+                      <button 
+                        type="button" 
+                        className={styles.attachBtn}
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={sending}
+                      >
+                        <Paperclip size={20} />
+                      </button>
+                      <input 
+                        type="text" 
+                        placeholder="Message..." 
+                        value={inputText}
+                        onChange={e => setInputText(e.target.value)}
+                        disabled={sending}
+                      />
+                      <button type="submit" className={styles.sendBtn} disabled={(!inputText.trim() && !attachment) || sending}>
+                        {sending ? '...' : <Send size={18} />}
+                      </button>
+                    </form>
+                  </div>
                 </>
               )}
             </div>

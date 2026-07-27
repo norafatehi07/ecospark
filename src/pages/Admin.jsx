@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../store/authStore';
-import { getFlaggedSubmissions, updateSubmissionStatus, awardPointsAndUpdateStreak, resolveReport, getTasks, getRewards, createNotification } from '../services/firestoreService';
-import { getAdminUsers, adminUpdateUserPoints, adminUpdateUserProfile, adminAwardFrame, adminBanUser, adminDeletePost, getReportedPosts, getAdminStats, getAdminChartData, getResolvedSubmissions, adminDeleteSubmission, adminCreateTask, adminUpdateTask, adminDeleteTask, adminCreateReward, adminUpdateReward, adminDeleteReward, getGlobalSettings, updateGlobalSettings, getFrameRequests, resolveFrameRequest } from '../services/adminService';
+import { getFlaggedSubmissions, updateSubmissionStatus, awardPointsAndUpdateStreak, resolveReport, getTasks, getRewards, createNotification, createOrGetChat } from '../services/firestoreService';
+import { getAdminUsers, adminUpdateUserPoints, adminUpdateUserProfile, adminAwardFrame, adminBanUser, adminDeletePost, getReportedPosts, getAdminStats, getAdminChartData, getResolvedSubmissions, adminDeleteSubmission, adminCreateTask, adminUpdateTask, adminDeleteTask, adminCreateReward, adminUpdateReward, adminDeleteReward, getGlobalSettings, updateGlobalSettings, getFrameRequests, resolveFrameRequest, adminForceWeeklyReset } from '../services/adminService';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../lib/firebase';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styles from './Admin.module.css';
-import { FileText, Shield, Users, Globe, Leaf, Ban, CheckSquare, Sparkles, XCircle, AlertTriangle, Trash2, Inbox, Crown, Diamond, Medal, Save } from 'lucide-react';
+import { FileText, Shield, Users, Globe, Leaf, Ban, CheckSquare, Sparkles, XCircle, AlertTriangle, Trash2, Inbox, Crown, Diamond, Medal, Save, MoreVertical, Edit2, Coins, Key, MessageSquare } from 'lucide-react';
 import PremiumIcon from '../components/common/PremiumIcon';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { REWARDS_DB } from '../constants/rewards';
@@ -25,6 +25,7 @@ const TABS = [
 
 export default function Admin() {
   const { profile } = useAuthStore();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
   
   const [loading, setLoading] = useState(true);
@@ -49,6 +50,15 @@ export default function Admin() {
   const [directAward, setDirectAward] = useState({ userId: '', frameId: 'frame-prime' });
   const [taskModal, setTaskModal] = useState({ open: false, task: null });
   const [rewardModal, setRewardModal] = useState({ open: false, reward: null });
+
+  const [openDropdownId, setOpenDropdownId] = useState(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClick = () => setOpenDropdownId(null);
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, []);
 
   // Role gate
   if (profile && profile.role !== 'teacher' && profile.role !== 'admin') {
@@ -195,6 +205,16 @@ export default function Admin() {
     }
   };
 
+  const handleOpenMessenger = async (otherUserId) => {
+    try {
+      const chatId = await createOrGetChat(profile.id, otherUserId);
+      navigate(`/messages/${chatId}`);
+    } catch (err) {
+      console.error(err);
+      toast.error(`Failed to open chat: ${err.message}`);
+    }
+  };
+
   // --- Reports Logic ---
   const handleDeletePost = async (postId, reportId) => {
     if (!window.confirm('Are you sure you want to delete this reported post?')) return;
@@ -289,29 +309,47 @@ export default function Admin() {
     }
   };
 
+  const handleForceWeeklyReset = async () => {
+    if (!window.confirm('Are you SURE you want to end the week now? This will reward the top 3 users and reset all weekly points to 0!')) return;
+    setLoading(true);
+    try {
+      await adminForceWeeklyReset();
+      toast.success('Week successfully ended. Rewards distributed!');
+      loadTabData(activeTab);
+    } catch (err) {
+      toast.error(err.message || 'Failed to force reset');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className={styles.page}>
       <div className={styles.header}>
-        <h1 className={styles.title} style={{display:'flex', alignItems:'center', gap:'0.5rem'}}><PremiumIcon icon={Shield} color="slate" size={32} /> Admin Panel</h1>
-        <p className={styles.subtitle}>Manage users, content, and review flagged submissions</p>
+        <div className={styles.headerLeft}>
+          <h1 className={styles.title} style={{display:'flex', alignItems:'center', gap:'0.5rem'}}><PremiumIcon icon={Shield} color="slate" size={32} /> Admin Panel</h1>
+          <p className={styles.subtitle}>Manage users, content, and review flagged submissions</p>
+        </div>
+        <button className={styles.forceResetBtn} onClick={handleForceWeeklyReset}>
+          <PremiumIcon icon={Crown} color="white" size={20} /> End Week & Distribute Rewards
+        </button>
       </div>
 
-      <div className={styles.tabs}>
-        {TABS.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`${styles.tab} ${activeTab === tab.id ? styles.active : ''}`}
-          >
-            {tab.label}
-            {activeTab === tab.id && (
-              <motion.div layoutId="adminTabIndicator" className={styles.activeIndicator} />
-            )}
-          </button>
-        ))}
-      </div>
+      <div className={styles.layout}>
+        <div className={styles.sidebar}>
+          {TABS.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`${styles.tab} ${activeTab === tab.id ? styles.active : ''}`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
-      {loading && activeTab !== 'submissions' && activeTab !== 'past' ? (
+        <div className={styles.mainContent}>
+          {loading && activeTab !== 'submissions' && activeTab !== 'past' ? (
         <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading...</div>
       ) : (
         <>
@@ -388,15 +426,49 @@ export default function Admin() {
                       <td>{user.role || 'user'}</td>
                       <td>{user.banned ? <><PremiumIcon icon={Ban} color="ruby" size={16} /> Banned</> : <><PremiumIcon icon={CheckSquare} color="emerald" size={16} /> Active</>}</td>
                       <td className={styles.actionCell}>
-                        <button className={styles.btnSm} onClick={() => setEditUserModal({ open: true, user, name: user.displayName || '' })}>Edit Profile</button>
-                        <button className={styles.btnSm} onClick={() => setPointsModal({ open: true, user, amount: 0 })}>Points</button>
-                        <button className={styles.btnSm} onClick={() => handleResetPassword(user.email)}>Reset Pwd</button>
-                        <button 
-                          className={`${styles.btnSm} ${user.banned ? '' : styles.danger}`} 
-                          onClick={() => handleBanUser(user, !user.banned)}
-                        >
-                          {user.banned ? 'Unban' : 'Ban'}
-                        </button>
+                        <div className={styles.dropdownWrapper} onClick={e => e.stopPropagation()}>
+                          <button 
+                            className={styles.iconBtn} 
+                            onClick={() => setOpenDropdownId(openDropdownId === user.id ? null : user.id)}
+                          >
+                            <MoreVertical size={20} />
+                          </button>
+                          
+                          {openDropdownId === user.id && (
+                            <div className={styles.dropdownMenu}>
+                              <button 
+                                className={styles.dropdownItem} 
+                                onClick={() => { setEditUserModal({ open: true, user, name: user.displayName || '' }); setOpenDropdownId(null); }}
+                              >
+                                <PremiumIcon icon={Edit2} color="slate" size={16} /> Edit Profile
+                              </button>
+                              <button 
+                                className={styles.dropdownItem} 
+                                onClick={() => { setPointsModal({ open: true, user, amount: 0 }); setOpenDropdownId(null); }}
+                              >
+                                <PremiumIcon icon={Coins} color="gold" size={16} /> Edit Balance
+                              </button>
+                              <button 
+                                className={styles.dropdownItem} 
+                                onClick={() => { handleResetPassword(user.email); setOpenDropdownId(null); }}
+                              >
+                                <PremiumIcon icon={Key} color="slate" size={16} /> Reset Password
+                              </button>
+                              <button 
+                                className={styles.dropdownItem} 
+                                onClick={() => { handleOpenMessenger(user.id); setOpenDropdownId(null); }}
+                              >
+                                <PremiumIcon icon={MessageSquare} color="primary" size={16} /> Direct Message
+                              </button>
+                              <button 
+                                className={`${styles.dropdownItem} ${styles.danger}`} 
+                                onClick={() => { handleBanUser(user, !user.banned); setOpenDropdownId(null); }}
+                              >
+                                <PremiumIcon icon={Ban} color="ruby" size={16} /> {user.banned ? 'Unban User' : 'Ban User'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -711,6 +783,38 @@ export default function Admin() {
                   Allow New User Signups
                 </label>
               </div>
+
+              <div className={styles.inputGroup}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: 'var(--text-base)', color: 'var(--color-text)' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={settingsData.arenaEnabled ?? true} 
+                    onChange={e => setSettingsData({...settingsData, arenaEnabled: e.target.checked})}
+                    style={{ width: '20px', height: '20px', accentColor: 'var(--color-ruby)' }}
+                  />
+                  Enable Arena (Global Kill Switch)
+                </label>
+              </div>
+
+              {/* ARENA SUB-SECTION TOGGLES */}
+              <div style={{ paddingLeft: '32px', display: 'flex', flexDirection: 'column', gap: '12px', opacity: (settingsData.arenaEnabled ?? true) ? 1 : 0.5, pointerEvents: (settingsData.arenaEnabled ?? true) ? 'auto' : 'none' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: 'var(--text-sm)', color: 'var(--color-text)' }}>
+                  <input type="checkbox" checked={settingsData.arenaOracleEnabled ?? true} onChange={e => setSettingsData({...settingsData, arenaOracleEnabled: e.target.checked})} style={{ width: '16px', height: '16px' }} />
+                  Enable The Oracle
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: 'var(--text-sm)', color: 'var(--color-text)' }}>
+                  <input type="checkbox" checked={settingsData.arenaTriviaEnabled ?? true} onChange={e => setSettingsData({...settingsData, arenaTriviaEnabled: e.target.checked})} style={{ width: '16px', height: '16px' }} />
+                  Enable Trivia Tournaments
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: 'var(--text-sm)', color: 'var(--color-text)' }}>
+                  <input type="checkbox" checked={settingsData.arenaSpinEnabled ?? true} onChange={e => setSettingsData({...settingsData, arenaSpinEnabled: e.target.checked})} style={{ width: '16px', height: '16px' }} />
+                  Enable Spin to Win
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: 'var(--text-sm)', color: 'var(--color-text)' }}>
+                  <input type="checkbox" checked={settingsData.arenaStakingEnabled ?? true} onChange={e => setSettingsData({...settingsData, arenaStakingEnabled: e.target.checked})} style={{ width: '16px', height: '16px' }} />
+                  Enable Yield Farming Pool
+                </label>
+              </div>
               
               <div className={styles.inputGroup} style={{ maxWidth: '300px' }}>
                 <label>Global Points Multiplier (e.g. 1.5 for +50% points)</label>
@@ -731,10 +835,12 @@ export default function Admin() {
           )}
         </>
       )}
+        </div>
+      </div>
 
       {/* Points Modal */}
       {pointsModal.open && pointsModal.user && (
-        <div className={styles.modalOverlay}>
+        <div className={styles.modalOverlay} style={{ zIndex: 10000 }}>
           <div className={styles.modalContent}>
             <h3>Edit Points for {pointsModal.user.displayName}</h3>
             <p style={{ fontSize: '14px', color: 'gray', margin: 0 }}>

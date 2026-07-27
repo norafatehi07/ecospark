@@ -12,27 +12,74 @@ import * as THREE from 'three';
 function EcoOrb() {
   const meshRef = useRef();
   const cloudsRef = useRef();
+  const markerRef = useRef();
 
-  // Load textures
-  const [colorMap, normalMap, specularMap, cloudsMap] = useTexture([
-    '/textures/earth_color.jpg',
-    '/textures/earth_normal.jpg',
-    '/textures/earth_specular.jpg',
-    '/textures/earth_clouds.png'
+  // Load high-resolution realistic textures
+  const textures = useTexture([
+    'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_atmos_2048.jpg',
+    'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_normal_2048.jpg',
+    'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_specular_2048.jpg',
+    'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_clouds_1024.png'
   ]);
+  
+  // Apply maximum anisotropic filtering to eliminate blurriness at grazing angles
+  useMemo(() => {
+    textures.forEach(t => {
+      t.anisotropy = 16;
+      t.minFilter = THREE.LinearMipmapLinearFilter;
+      t.magFilter = THREE.LinearFilter;
+    });
+  }, [textures]);
+
+  const [colorMap, normalMap, specularMap, cloudsMap] = textures;
 
   const earthGeometry = useMemo(() => new THREE.SphereGeometry(1.4, 64, 64), []);
   const cloudsGeometry = useMemo(() => new THREE.SphereGeometry(1.42, 64, 64), []);
 
-  useFrame((state) => {
+  // India (Uttar Pradesh) Texture Coordinates
+  // The user confirmed these coordinates place the pin exactly on India:
+  const upPhi = 1.12; 
+  const upTheta = -3.21;
+  
+  // To bring the pin exactly to the center of the camera (+Z), we need to:
+  // 1. Rotate the globe around Y by 3.21 to center the longitude.
+  // 2. Rotate the globe around X by 0.45 (which is Math.PI/2 - 1.12) to center the latitude.
+  const targetQuat = useMemo(() => {
+    const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -upTheta);
+    const qX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), (Math.PI / 2) - upPhi);
+    // multiplyQuaternions(A, B) applies B then A. So Y rotation is applied first, then X.
+    return new THREE.Quaternion().multiplyQuaternions(qX, qY);
+  }, []);
+
+  const cloudTargetQuat = useMemo(() => {
+    const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -upTheta + 0.1);
+    const qX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), (Math.PI / 2) - upPhi);
+    return new THREE.Quaternion().multiplyQuaternions(qX, qY);
+  }, []);
+  
+  const targetCameraPos = useMemo(() => new THREE.Vector3(0, 0, 2.5), []);
+
+  useFrame((state, delta) => {
     const t = state.clock.elapsedTime;
+    
     if (!meshRef.current) return;
 
-    // Extremely simple, bulletproof linear rotation. No complex math.
-    meshRef.current.rotation.y = t * 0.1;
-    
-    if (cloudsRef.current) {
-      cloudsRef.current.rotation.y = t * 0.12;
+    if (t < 2.5) {
+      // Phase 1: Fast cinematic spinning
+      meshRef.current.rotation.y = t * 1.5;
+      if (cloudsRef.current) cloudsRef.current.rotation.y = t * 1.6;
+      state.camera.position.z = 8 - (t * 0.5); // Start pulling in slightly
+    } else {
+      // Phase 2: Smooth swoop to India (Uttar Pradesh)
+      // Directly slerp the mesh quaternion to avoid heavy memory allocation and freezing
+      meshRef.current.quaternion.slerp(targetQuat, 2.0 * delta);
+      
+      if (cloudsRef.current) {
+        cloudsRef.current.quaternion.slerp(cloudTargetQuat, 1.5 * delta);
+      }
+
+      // Lerp camera zoom
+      state.camera.position.lerp(targetCameraPos, 2.5 * delta);
     }
   });
 
@@ -46,6 +93,16 @@ function EcoOrb() {
           specular={new THREE.Color('grey')}
           shininess={15}
         />
+        
+        {/* Location Pin for UP / India */}
+        <mesh position={new THREE.Vector3().setFromSphericalCoords(1.4, upPhi, upTheta)}>
+          <sphereGeometry args={[0.03, 16, 16]} />
+          <meshBasicMaterial color="#10b981" />
+          <mesh position={[0, 0, 0]}>
+            <sphereGeometry args={[0.06, 16, 16]} />
+            <meshBasicMaterial color="#10b981" transparent opacity={0.4} blending={THREE.AdditiveBlending} />
+          </mesh>
+        </mesh>
       </mesh>
       
       <mesh ref={cloudsRef} geometry={cloudsGeometry}>

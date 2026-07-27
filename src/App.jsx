@@ -17,6 +17,7 @@ const Auth = React.lazy(() => import('./pages/Auth'));
 const Tasks = React.lazy(() => import('./pages/Tasks'));
 const Leaderboard = React.lazy(() => import('./pages/Leaderboard'));
 const Rewards = React.lazy(() => import('./pages/Rewards'));
+const Arena = React.lazy(() => import('./pages/Arena'));
 const Community = React.lazy(() => import('./pages/Community'));
 const Profile = React.lazy(() => import('./pages/Profile'));
 const UserProfile = React.lazy(() => import('./pages/UserProfile'));
@@ -196,6 +197,9 @@ export default function App() {
                       <Route path="/tasks" element={<Tasks />} />
                       <Route path="/leaderboard" element={<Leaderboard />} />
                       <Route path="/rewards" element={<Rewards />} />
+                      {(settings.arenaEnabled ?? true) && (
+                        <Route path="/arena" element={<Arena />} />
+                      )}
                       <Route path="/community" element={<Community />} />
                       <Route path="/profile" element={<Profile />} />
                       <Route path="/user/:id" element={<UserProfile />} />

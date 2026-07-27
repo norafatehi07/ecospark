@@ -263,7 +263,72 @@ export default function Rewards() {
     });
   }
 
-  const TABS = ['all', 'frames', 'glows', 'companions', 'backgrounds', 'entries'];
+  const TABS = ['all', 'lootboxes', 'frames', 'glows', 'companions', 'backgrounds', 'entries'];
+
+  const LOOT_CASES = [
+    { id: 'bronze_case', name: 'Bronze Case', cost: 1000, icon: '📦', color: '#CD7F32' },
+    { id: 'silver_case', name: 'Silver Case', cost: 2500, icon: '🧰', color: '#C0C0C0' },
+    { id: 'gold_case', name: 'Gold Case', cost: 5000, icon: '💼', color: '#FFD700' }
+  ];
+
+  const [lootboxActive, setLootboxActive] = useState(false);
+  const [spinningCase, setSpinningCase] = useState(null);
+  const [wonReward, setWonReward] = useState(null);
+  const [scrollerItems, setScrollerItems] = useState([]);
+  
+  const generateLoot = (cost) => {
+    // Generate a weighted random reward based on case cost
+    // Bronze: up to silver tier. Silver: up to platinum. Gold: up to god/gaia
+    let pool = [];
+    if (cost === 1000) pool = REWARDS_DB.filter(r => ['bronze', 'silver', 'gold'].includes(r.tier));
+    if (cost === 2500) pool = REWARDS_DB.filter(r => ['silver', 'gold', 'platinum'].includes(r.tier));
+    if (cost === 5000) pool = REWARDS_DB.filter(r => ['gold', 'platinum', 'god', 'gaia', 'supernova'].includes(r.tier));
+    
+    // Add weights (cheaper items have higher chance)
+    const weightedPool = [];
+    pool.forEach(r => {
+      let weight = 10;
+      if (r.tier === 'bronze' || r.tier === 'silver') weight = 50;
+      if (r.tier === 'gold') weight = 20;
+      if (r.tier === 'platinum') weight = 10;
+      if (r.tier === 'god') weight = 3;
+      if (r.tier === 'gaia' || r.tier === 'supernova') weight = 1;
+      for (let i=0; i<weight; i++) weightedPool.push(r);
+    });
+
+    return weightedPool[Math.floor(Math.random() * weightedPool.length)];
+  };
+
+  const handleOpenLootbox = async (caseConfig) => {
+    if (userPoints < caseConfig.cost) {
+      toast.error('Not enough points!');
+      return;
+    }
+
+    const wonItem = generateLoot(caseConfig.cost);
+    
+    // Generate 30 random items for the visual scroller
+    const scroller = Array.from({length: 30}).map(() => REWARDS_DB[Math.floor(Math.random() * REWARDS_DB.length)]);
+    // Set the 25th item to be the winning item
+    scroller[25] = wonItem;
+    
+    setScrollerItems(scroller);
+    setSpinningCase(caseConfig);
+    setLootboxActive(true);
+    setWonReward(null);
+
+    // After animation (4 seconds), reveal
+    setTimeout(async () => {
+      setWonReward(wonItem);
+      try {
+        await redeemReward(user.uid, wonItem.id, caseConfig.cost);
+        setShowConfetti(true);
+        setTimeout(() => setShowConfetti(false), 2000);
+      } catch (err) {
+        toast.error('Failed to claim reward: ' + err.message);
+      }
+    }, 4000);
+  };
 
   return (
     <div className={styles.page}>
@@ -334,6 +399,30 @@ export default function Rewards() {
             })
           )}
         </div>
+      ) : activeTab === 'lootboxes' ? (
+        <div className={styles.lootboxContainer}>
+          <div style={{ textAlign: 'center' }}>
+            <h2 style={{ fontFamily: 'var(--font-display)', margin: '0 0 10px 0', fontSize: '2rem' }}>Mystery Lootboxes</h2>
+            <p style={{ color: 'var(--color-text-secondary)' }}>Test your luck to win high-tier rewards for a fraction of the cost.</p>
+          </div>
+          
+          <div className={styles.lootboxGrid}>
+            {LOOT_CASES.map(c => (
+              <div key={c.id} className={styles.caseCard} style={{ '--case-color': c.color }}>
+                <div className={styles.caseIcon}>{c.icon}</div>
+                <h3 className={styles.caseTitle}>{c.name}</h3>
+                <div className={styles.caseCost}>{c.cost.toLocaleString()} pts</div>
+                <button 
+                  className={styles.caseBtn} 
+                  disabled={userPoints < c.cost}
+                  onClick={() => handleOpenLootbox(c)}
+                >
+                  {userPoints >= c.cost ? 'Unlock Case' : `Need ${(c.cost - userPoints).toLocaleString()} more`}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
       ) : loading ? (
         <div className={styles.grid}>
           {Array.from({ length: 6 }).map((_, i) => (
@@ -374,6 +463,69 @@ export default function Rewards() {
               <p>No rewards found for this category!</p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* LOOTBOX SCROLLER MODAL */}
+      {lootboxActive && (
+        <div className={styles.scrollerOverlay}>
+          <div style={{ marginBottom: '20px', textAlign: 'center' }}>
+            <h2 style={{ fontFamily: 'var(--font-display)', margin: 0, fontSize: '2.5rem', textTransform: 'uppercase', letterSpacing: '2px', color: spinningCase?.color }}>
+              Opening {spinningCase?.name}...
+            </h2>
+          </div>
+          
+          <div className={styles.scrollerWindow}>
+            <div className={styles.scrollerLine}></div>
+            <motion.div 
+              className={styles.scrollerTrack}
+              initial={{ x: '50%' }}
+              animate={{ x: wonReward ? `calc(50% - ${25 * 210}px)` : '50%' }}
+              transition={{ duration: 5, ease: [0.05, 0.9, 0.1, 1] }}
+            >
+              {scrollerItems.map((item, idx) => {
+                const cfg = TIER_CONFIG[item.tier];
+                return (
+                  <div key={idx} className={styles.scrollerItem} style={{ borderColor: cfg.color, boxShadow: `inset 0 0 30px ${cfg.color}40, 0 10px 20px rgba(0,0,0,0.5)` }}>
+                    <div className={styles.scrollerItemIcon}>{item.icon || '🏅'}</div>
+                    <div className={styles.scrollerItemName} style={{ color: cfg.color }}>{item.name}</div>
+                  </div>
+                );
+              })}
+            </motion.div>
+          </div>
+
+          <AnimatePresence>
+            {wonReward && (
+              <motion.div 
+                className={styles.lootReveal}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.5 }}
+              >
+                <motion.div 
+                  className={styles.lootRevealCard}
+                  initial={{ scale: 0.5, y: 100 }}
+                  animate={{ scale: 1, y: 0 }}
+                  transition={{ type: 'spring', bounce: 0.6, duration: 0.8 }}
+                >
+                  <div style={{ fontSize: '120px', marginBottom: '20px', filter: `drop-shadow(0 0 50px ${TIER_CONFIG[wonReward.tier].color})`, position: 'relative', zIndex: 2 }}>
+                    {wonReward.icon || '🏅'}
+                  </div>
+                  <h2 style={{ fontFamily: 'var(--font-display)', margin: '0 0 10px 0', fontSize: '3rem', position: 'relative', zIndex: 2 }}>{wonReward.name}</h2>
+                  <p style={{ color: TIER_CONFIG[wonReward.tier].color, textTransform: 'uppercase', fontWeight: '900', letterSpacing: '4px', fontSize: '1.2rem', position: 'relative', zIndex: 2 }}>
+                    {TIER_CONFIG[wonReward.tier].label} Tier
+                  </p>
+                  <button 
+                    onClick={() => setLootboxActive(false)} 
+                    style={{ marginTop: '40px', padding: '16px 40px', background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '100px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1.2rem', position: 'relative', zIndex: 2, boxShadow: '0 10px 20px rgba(139, 92, 246, 0.4)' }}
+                  >
+                    Claim Reward
+                  </button>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       )}
     </div>

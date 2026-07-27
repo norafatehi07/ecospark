@@ -17,13 +17,14 @@ const EcoHero3D = lazy(() => import('../components/hero/EcoHero3D'));
 // Capability check for 3D
 function canRender3D() {
   if (typeof window === 'undefined') return false;
+  // We'll respect user accessibility preferences
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return false;
-  const mem = navigator?.deviceMemory;
-  const cpu = navigator?.hardwareConcurrency;
-  if (mem && mem < 4) return false;
-  if (cpu && cpu < 4) return false;
+  
+  // Removed strict deviceMemory and hardwareConcurrency checks 
+  // because the 3D globe is lightweight and users want the premium experience.
+  
   const w = window.innerWidth;
-  if (w < 768) return false; // Always static on mobile
+  if (w < 768) return false; // Always static on mobile for battery saving
   return true;
 }
 

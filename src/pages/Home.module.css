@@ -5,6 +5,15 @@
   flex-direction: column;
   gap: 24px;
   max-width: 1400px;
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .page {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
 }
 
 /* Welcome banner */
@@ -277,19 +286,19 @@ a {
 
 .quickActions {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
 
 @media (min-width: 768px) {
   .quickActions {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(4, 1fr);
   }
 }
 
 @media (min-width: 1280px) {
   .quickActions {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(4, 1fr);
   }
 }
 
