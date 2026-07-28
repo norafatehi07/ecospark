@@ -11,11 +11,12 @@ export function Navbar() {
 
       {/* Center */}
       <div className="hidden md:flex items-center liquid-glass p-1.5 rounded-full">
-        {['Features', 'Impact', 'Community', 'About'].map((item) => (
-          <a key={item} href="#" className="px-3 py-2 text-sm font-medium text-white/90 font-body hover:text-white transition-colors">
-            {item}
-          </a>
-        ))}
+        <a href="https://www.linkedin.com/in/amitesh-yadav/" target="_blank" rel="noopener noreferrer" className="px-3 py-2 text-sm font-medium text-white/90 font-body hover:text-white transition-colors">
+          LinkedIn
+        </a>
+        <a href="/EcoSpark_Whitepaper.pdf" target="_blank" rel="noopener noreferrer" className="px-3 py-2 text-sm font-medium text-white/90 font-body hover:text-white transition-colors">
+          Whitepaper
+        </a>
         <Link to="/auth" className="bg-white text-black px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap flex items-center gap-1 ml-1 hover:bg-white/90 transition-colors">
           Sign In
           <ArrowUpRight className="w-4 h-4" />
