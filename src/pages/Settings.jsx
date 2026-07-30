@@ -171,6 +171,7 @@ export default function Settings() {
             <SelectRow
               icon="🌈" label="Theme" value={activeTheme}
               options={[
+                { value: 'regalia', label: '👑 Regalia' },
                 { value: 'metallic', label: '🌑 Metallic Black' },
                 { value: 'forest', label: '🌿 Forest Green' },
                 { value: 'ocean', label: '🌊 Ocean Blue' },

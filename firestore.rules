@@ -1,76 +1,175 @@
 rules_version = '2';
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// EcoSpark Firestore security rules
+//
+// Governing principle: the client may never write anything of value. Points,
+// roles, bans and inventory are mutated only by the trusted serverless functions
+// in api/ (Admin SDK, which bypasses these rules by design). What remains here
+// is the boundary for everything the browser is still allowed to touch.
+//
+// Verify with the emulator before deploying:
+//   firebase emulators:start --only firestore
+// ═══════════════════════════════════════════════════════════════════════════════
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
+    // ── Helpers ────────────────────────────────────────────────────────────
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return request.auth.uid == userId;
+    function isSelf(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function isTeacher() {
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Custom claims are authoritative: they can only be set with the Admin SDK,
+    // whereas the Firestore `role` field is just another document. The mirror is
+    // kept as a fallback for accounts provisioned before claims existed.
+    function claimRole() {
+      return request.auth.token.role;
+    }
+
+    function isOwner() {
+      return isAuthenticated() && claimRole() == 'owner';
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (claimRole() == 'admin' || isOwner());
+    }
+
+    // Teachers and admins both moderate. Named for what it grants, unlike the
+    // previous isTeacher() which silently included admins too.
+    function isStaff() {
+      return isAuthenticated() && (
+        claimRole() in ['teacher', 'admin', 'owner'] ||
+        userDoc().role in ['teacher', 'admin', 'owner']
+      );
+    }
+
+    // Fields the client must never author. Anything that represents value,
+    // permission, or moderation state.
+    function touchesProtectedFields() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'points', 'spendableBalance', 'lifetimePoints', 'weeklyPoints',
+        'role', 'banned', 'inventory', 'unlockedFrames', 'equipped',
+        'activeFrame', 'streak', 'longestStreak', 'lastActivityDate',
+        'badges', 'totalTasksCompleted', 'totalCO2Saved', 'totalWaterSaved',
+        'totalWasteSaved', 'referralCount', 'referredBy', 'referralCode',
+        'arenaBets', 'arenaStakes', 'followersCount', 'followingCount'
+      ]);
+    }
+
+    function isChatParticipant(chatId) {
       return isAuthenticated() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['teacher', 'admin'];
+        request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
     }
 
     // ── USERS ──────────────────────────────────────────────────────────────
+    // Previously `allow update: if isAuthenticated()`, which let any signed-in
+    // user rewrite any other user's points, role and inventory.
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow create: if isOwner(userId);
-      allow update: if isAuthenticated();
-      allow delete: if isOwner(userId);
+      allow create: if isSelf(userId);
+
+      // You may edit your own profile, but only the harmless parts: display
+      // name, photo, preferences, privacy toggles, blocklist.
+      allow update: if isSelf(userId) && !touchesProtectedFields();
+
+      // Deletion would orphan ledger entries and leaderboard rows.
+      allow delete: if false;
     }
 
-    // ── TASKS ───────────────
+    // ── POINT LEDGER (append-only, server-written) ─────────────────────────
+    match /pointTransactions/{entryId} {
+      allow read: if isAuthenticated() &&
+        (resource.data.userId == request.auth.uid || isStaff());
+      // Written exclusively by the Admin SDK.
+      allow write: if false;
+    }
+
+    // ── AUDIT LOG (owner-readable, server-written) ─────────────────────────
+    match /auditLog/{entryId} {
+      allow read: if isOwner();
+      allow write: if false;
+    }
+
+    // ── TASKS ──────────────────────────────────────────────────────────────
     match /tasks/{taskId} {
       allow read: if isAuthenticated();
-      allow write: if isTeacher();
+      allow write: if isStaff();
     }
 
     // ── SUBMISSIONS ────────────────────────────────────────────────────────
     match /submissions/{submissionId} {
       allow read: if isAuthenticated() &&
-        (resource.data.userId == request.auth.uid || isTeacher());
+        (resource.data.userId == request.auth.uid || isStaff());
+
+      // A student may submit their own work, but must not pre-set the verdict
+      // or the payout — those come from verification and the task definition.
       allow create: if isAuthenticated() &&
-        request.resource.data.userId == request.auth.uid;
-      // Updates come from server-side only (verify serverless function)
-      allow update: if isAuthenticated() &&
-        (resource.data.userId == request.auth.uid || isTeacher());
-      allow delete: if isTeacher();
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.status == 'pending';
+
+      // Status transitions belong to the verifier and to staff review.
+      allow update: if isStaff();
+      allow delete: if isStaff();
     }
 
-    // ── LEADERBOARD (public read, server-side write) ──────────────────────
+    // ── LEADERBOARD (public read, server-written) ─────────────────────────
+    // Was writable by the row's owner, which meant points could be forged here
+    // even once /users was locked.
     match /leaderboard/{userId} {
       allow read: if isAuthenticated();
-      allow write: if isOwner(userId) || isTeacher(); // Also updated by awardPointsAndUpdateStreak transaction
+      allow write: if false;
     }
 
-    // ── REWARDS ─────────────────────────────────────
+    // ── REWARDS CATALOG ────────────────────────────────────────────────────
     match /rewards/{rewardId} {
       allow read: if isAuthenticated();
-      allow write: if isTeacher();
+      allow write: if isStaff();
     }
 
-    // ── REDEMPTIONS ────────────────────────────────────────────────────────
+    // ── REDEMPTIONS / TRANSACTIONS (server-written) ───────────────────────
     match /redemptions/{redemptionId} {
       allow read: if isAuthenticated() &&
-        resource.data.userId == request.auth.uid;
-      allow create: if isAuthenticated() &&
-        request.resource.data.userId == request.auth.uid;
-      allow update, delete: if false;
+        (resource.data.userId == request.auth.uid || isStaff());
+      allow write: if false;
     }
 
-    // ── TRANSACTIONS ───────────────────────────────────────────────────────
     match /transactions/{transactionId} {
       allow read: if isAuthenticated() &&
-        (resource.data.userId == request.auth.uid || isTeacher());
-      allow create: if isAuthenticated() &&
-        (request.resource.data.userId == request.auth.uid || isTeacher() || request.resource.data.type == 'earned');
-      allow update, delete: if isTeacher();
+        (resource.data.userId == request.auth.uid || isStaff());
+      allow write: if false;
+    }
+
+    // ── ARENA (server-written) ────────────────────────────────────────────
+    match /oracleBets/{betId} {
+      allow read: if isAuthenticated() &&
+        (resource.data.userId == request.auth.uid || isStaff());
+      allow write: if false;
+    }
+
+    match /growthPoolStakes/{stakeId} {
+      allow read: if isAuthenticated() &&
+        (resource.data.userId == request.auth.uid || isStaff());
+      allow write: if false;
+    }
+
+    match /arenaTriviaSessions/{sessionId} {
+      allow read: if isAuthenticated() &&
+        (resource.data.userId == request.auth.uid || isStaff());
+      allow write: if false;
+    }
+
+    match /oracleQuestions/{questionId} {
+      allow read: if isAuthenticated();
+      allow write: if isStaff();
     }
 
     // ── COMMUNITY POSTS ────────────────────────────────────────────────────
@@ -78,74 +177,114 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() &&
         request.resource.data.userId == request.auth.uid;
-      allow update: if isAuthenticated() &&
-        (resource.data.userId == request.auth.uid ||
-         // Allow any authenticated user to update likes and commentCount
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']) ||
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount']) ||
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'commentCount']));
+
+      // Author may edit their own post; anyone may toggle a like or bump the
+      // comment count, and nothing else.
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['likes', 'commentCount', 'reactions'])
+      );
       allow delete: if isAuthenticated() &&
-        (resource.data.userId == request.auth.uid || isTeacher());
-        
+        (resource.data.userId == request.auth.uid || isStaff());
+
       match /comments/{commentId} {
         allow read: if isAuthenticated();
-        allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-        allow update, delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isTeacher());
+        allow create: if isAuthenticated() &&
+          request.resource.data.userId == request.auth.uid;
+        allow update, delete: if isAuthenticated() &&
+          (resource.data.userId == request.auth.uid || isStaff());
       }
     }
 
-    // ── GROUPS ────────────────────────────────────────────────────────────
+    // ── GROUPS ─────────────────────────────────────────────────────────────
     match /groups/{groupId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated() &&
-        (resource.data.creatorId == request.auth.uid ||
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'totalPoints']));
-      allow delete: if false;
+      allow create: if isAuthenticated() &&
+        request.resource.data.creatorId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        resource.data.creatorId == request.auth.uid ||
+        // Joining/leaving only. totalPoints is server-maintained.
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+      );
+      allow delete: if isStaff();
     }
 
     // ── REPORTS ────────────────────────────────────────────────────────────
     match /reports/{reportId} {
-      allow read, update: if isTeacher();
+      allow read, update: if isStaff();
+      allow create: if isAuthenticated() &&
+        request.resource.data.reporterId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // ── NOTIFICATIONS ──────────────────────────────────────────────────────
+    match /notifications/{notifId} {
+      allow read: if isAuthenticated() &&
+        resource.data.userId == request.auth.uid;
+      // Recipient may only flip `read`.
+      allow update: if isAuthenticated() &&
+        resource.data.userId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      // Client-created notifications remain allowed so DM/follow alerts keep
+      // working; they carry no value and are addressed to a single recipient.
       allow create: if isAuthenticated();
       allow delete: if false;
     }
 
-    // ── NOTIFICATIONS ─────────────────────────────────────────────────────
-    match /notifications/{notifId} {
-      allow read: if isAuthenticated() &&
-        resource.data.userId == request.auth.uid;
-      allow update: if isAuthenticated() &&
-        resource.data.userId == request.auth.uid &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
-      allow create: if isAuthenticated(); 
-      allow delete: if false; // Server-side only
-    }
-
-    // ── FOLLOWS ───────────────────────────────────────────────────────────
+    // ── FOLLOWS ────────────────────────────────────────────────────────────
+    // Doc id is `${followerId}_${followingId}`; a user may only create the edge
+    // where they are the follower.
     match /follows/{followId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+        request.resource.data.followerId == request.auth.uid;
+      allow delete: if isAuthenticated() &&
+        resource.data.followerId == request.auth.uid;
+      allow update: if false;
     }
 
-    // ── SETTINGS ────────────────────────────────────────────────────────
+    // ── SETTINGS ───────────────────────────────────────────────────────────
+    // Public read: the landing page and maintenance gate read this pre-auth.
     match /settings/{docId} {
       allow read: if true;
-      allow write: if isTeacher();
+      allow write: if isAdmin();
     }
 
-    // ── FRAME REQUESTS ────────────────────────────────────────────────────
+    // ── FRAME REQUESTS ─────────────────────────────────────────────────────
     match /frameRequests/{requestId} {
-      allow read, update, delete: if isTeacher();
-      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId;
+      allow read, update, delete: if isStaff();
+      allow create: if isAuthenticated() &&
+        request.auth.uid == request.resource.data.userId;
     }
 
-    // ── CHATS & MESSAGES ──────────────────────────────────────────────────
+    // ── CHATS & MESSAGES ───────────────────────────────────────────────────
+    // Was `allow read, write: if isAuthenticated()` — every conversation in the
+    // app was readable and writable by any signed-in account.
     match /chats/{chatId} {
-      allow read, write: if isAuthenticated();
-      
+      allow read: if isAuthenticated() &&
+        request.auth.uid in resource.data.participants;
+      allow create: if isAuthenticated() &&
+        request.auth.uid in request.resource.data.participants &&
+        request.resource.data.participants.size() == 2;
+      // Participants may update conversation metadata (lastMessage, unreadBy).
+      allow update: if isAuthenticated() &&
+        request.auth.uid in resource.data.participants &&
+        request.resource.data.participants == resource.data.participants;
+      allow delete: if false;
+
       match /messages/{messageId} {
-        allow read, write: if isAuthenticated();
+        allow read: if isChatParticipant(chatId);
+        // You may only send as yourself, and only into a chat you are in.
+        allow create: if isChatParticipant(chatId) &&
+          request.resource.data.senderId == request.auth.uid;
+        // Editing is limited to reactions and read receipts; message text is
+        // immutable so history cannot be rewritten after the fact.
+        allow update: if isChatParticipant(chatId) &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['reactions', 'readBy', 'editedAt', 'deleted']);
+        allow delete: if isAuthenticated() &&
+          resource.data.senderId == request.auth.uid;
       }
     }
   }

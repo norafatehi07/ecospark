@@ -1,0 +1,195 @@
+/* ============================================================
+   Card — shared surface primitive (Regalia Phase 1)
+
+   Contrast of the text tokens used here, measured on each tone's background:
+     .title    --color-text on --color-bg-card
+               regalia  #F3F6F1 on #10160F → 16.6:1 (AAA)
+     .subtitle --color-text-secondary on --color-bg-card
+               regalia  #A8BCA9 on #10160F →  8.9:1 (AAA)
+     .title    --color-text on --color-surface-raised (tone="raised")
+               regalia  #F3F6F1 on #1C2A1E → 13.1:1 (AAA)
+     .subtitle --color-text-secondary on --color-surface-raised
+               regalia  #A8BCA9 on #1C2A1E →  6.5:1 (AAA)
+   --color-text-tertiary is deliberately absent: 3.5:1 on --color-surface-raised
+   in regalia, so it is large-text / non-text only and has no place in a
+   subtitle.
+
+   Motion budget: nothing on mount. Only tone="interactive" moves, and only on
+   hover/focus (§2.5 — no motion on things that appear every page load).
+   ============================================================ */
+
+.card {
+  position: relative;
+  display: block;
+  border-radius: var(--card-radius);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-card);
+  color: var(--color-text);
+  text-align: left;
+  /* Only interactive cards transition; the property list is cheap either way
+     and keeps hover from snapping when `interactive` is toggled at runtime. */
+  transition:
+    box-shadow var(--transition-standard),
+    border-color var(--transition-standard),
+    transform var(--transition-standard);
+}
+
+/* ---------- tones ---------- */
+.flat {
+  background: var(--color-bg-card);
+  box-shadow: none;
+}
+
+.default {
+  background: var(--color-bg-card);
+  box-shadow: var(--elevation-2);
+}
+
+.raised {
+  background: var(--color-surface-raised);
+  box-shadow: var(--elevation-3);
+}
+
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: var(--glass-border);
+  box-shadow: var(--elevation-2);
+}
+
+/* Ceremonial. The gold hairline is what separates a Celestial surface from an
+   ordinary one — do not reach for this on everyday panels. */
+.gold {
+  background: var(--color-bg-card);
+  border-color: var(--color-gold-border, rgba(245, 158, 11, 0.28));
+  box-shadow: var(--elevation-3), var(--glow-gold);
+}
+
+/* ---------- padding ---------- */
+.pad-none {
+  padding: 0;
+}
+
+.pad-sm {
+  padding: 12px;
+}
+
+.pad-md {
+  padding: 20px;
+}
+
+.pad-lg {
+  padding: clamp(20px, 3vw, 32px);
+}
+
+/* ---------- interactive ---------- */
+.interactive {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.interactive:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--elevation-3);
+  transform: translateY(-2px);
+}
+
+.interactive:active {
+  transform: translateY(0);
+  transition-duration: 80ms;
+}
+
+.interactive:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.gold.interactive:hover {
+  box-shadow: var(--elevation-4), var(--glow-gold);
+}
+
+/* ---------- structure ---------- */
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.headerText {
+  min-width: 0;
+}
+
+.headerAction {
+  flex: 0 0 auto;
+}
+
+.title {
+  /* --text-lg is one of the five steps [data-text-size] actually overrides, so
+     this scales with the user's text-size preference. --text-2xl and up are NOT
+     overridden — avoid them in primitives. */
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  line-height: var(--line-snug);
+  color: var(--color-text);
+  margin: 0;
+}
+
+.subtitle {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: var(--font-normal);
+  line-height: var(--line-normal);
+  color: var(--color-text-secondary);
+  margin: 4px 0 0;
+}
+
+.body {
+  min-width: 0;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+
+/* [data-contrast="high"] overrides --color-text, --color-bg, --color-border and
+   --color-primary, but NOT --color-bg-card / --color-surface-raised. Without
+   this the high-contrast text lands on an unadjusted card background. */
+[data-contrast='high'] .card {
+  background: var(--color-bg);
+  border-color: var(--color-border);
+}
+
+[data-contrast='high'] .glass {
+  background: var(--color-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .interactive:hover,
+  .interactive:active {
+    transform: none;
+  }
+}
+
+[data-reduced-motion='true'] .interactive:hover,
+[data-reduced-motion='true'] .interactive:active {
+  transform: none;
+}
+
+/* 375px: tighten the largest padding step so content keeps its line length. */
+@media (max-width: 420px) {
+  .pad-lg {
+    padding: 18px;
+  }
+}

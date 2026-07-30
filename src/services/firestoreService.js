@@ -184,6 +184,10 @@ export async function createSubmission(userId, taskId, imageUrl, taskMeta = {}) 
     co2: taskMeta.co2 || 0,
     water: taskMeta.water || 0,
     waste: taskMeta.waste || 0,
+    // Stored so api/verify.js has criteria to judge against for AI-generated
+    // tasks that never existed as a `tasks` document. When the task IS in the
+    // catalog, that document wins — see api/verify.js.
+    verificationPrompt: taskMeta.verificationPrompt || null,
     aiVerdict: null,
     confidence: null,
     reason: null,

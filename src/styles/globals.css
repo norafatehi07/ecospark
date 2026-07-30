@@ -46,6 +46,22 @@ body {
   transition-duration: 0.01ms !important;
 }
 
+/* Screen-reader-only text. Declared explicitly rather than leaning on
+   Tailwind's utility: this is load-bearing for the status/label announcements
+   in GrowthRings and the icon-only controls, and must not depend on whether a
+   scanner happened to spot the class name. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
 /* ============================================================
    TYPOGRAPHY
    ============================================================ */

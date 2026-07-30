@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../store/authStore';
-import { getFlaggedSubmissions, updateSubmissionStatus, awardPointsAndUpdateStreak, resolveReport, getTasks, getRewards, createNotification, createOrGetChat } from '../services/firestoreService';
+import { getFlaggedSubmissions, updateSubmissionStatus, resolveReport, getTasks, getRewards, createNotification, createOrGetChat } from '../services/firestoreService';
+import { adminReviewSubmission } from '../services/economyService';
 import { getAdminUsers, adminUpdateUserPoints, adminUpdateUserProfile, adminAwardFrame, adminBanUser, adminDeletePost, getReportedPosts, getAdminStats, getAdminChartData, getResolvedSubmissions, adminDeleteSubmission, adminCreateTask, adminUpdateTask, adminDeleteTask, adminCreateReward, adminUpdateReward, adminDeleteReward, getGlobalSettings, updateGlobalSettings, getFrameRequests, resolveFrameRequest, adminForceWeeklyReset } from '../services/adminService';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../lib/firebase';
@@ -109,26 +110,25 @@ export default function Admin() {
   // --- Submissions Logic ---
   const handleDecision = async (sub, status) => {
     try {
-      await updateSubmissionStatus(sub.id, status, {
-        reviewedBy: profile?.id,
-        reason: status === 'approved' ? 'Manually approved by admin' : 'Manually rejected by admin',
-        pointsAwarded: status === 'approved',
+      // Status change, payout and audit entry all happen server-side in one
+      // call. The payout shares its idempotency key with the student's own
+      // claim path, so a submission can never be paid for twice.
+      await adminReviewSubmission({
+        submissionId: sub.id,
+        decision: status,
+        note: status === 'approved' ? 'Manually approved by staff' : 'Manually rejected by staff',
       });
 
-      if (status === 'approved' && !sub.pointsAwarded) {
-        await awardPointsAndUpdateStreak(sub.userId, sub.taskId, sub.points || 50, {
-          co2: sub.co2 || 0, water: sub.water || 0, waste: sub.waste || 0,
-        });
-        
+      if (status === 'approved') {
         await createNotification(sub.userId, 'system', {
-          message: `Your task verification was approved by an Admin! You've been credited ${sub.points || 50} points.`
+          message: `Your task verification was approved. You've been credited ${sub.points || 50} points.`,
         });
       }
 
       setFlagged((prev) => prev.filter((s) => s.id !== sub.id));
-      toast.success(`Submission ${status}!`);
-    } catch {
-      toast.error('Could not update submission');
+      toast.success(`Submission ${status}`);
+    } catch (err) {
+      toast.error(err.message || 'Could not update submission');
     }
   };
 

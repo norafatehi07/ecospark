@@ -3,8 +3,8 @@ import { create } from 'zustand';
 
 const getPreferredTheme = () => {
   try {
-    return localStorage.getItem('ecospark-theme') || 'metallic';
-  } catch { return 'metallic'; }
+    return localStorage.getItem('ecospark-theme') || 'regalia';
+  } catch { return 'regalia'; }
 };
 
 const getPreferredMotion = () => {
@@ -64,8 +64,18 @@ export const useUiStore = create((set, get) => ({
 
   setTheme: (theme) => {
     localStorage.setItem('ecospark-theme', theme);
-    // Map theme name to data-theme attribute value
-    const attrMap = { forest: '', ocean: 'ocean', dark: 'dark', midnight: 'midnight', sunset: 'sunset', metallic: 'metallic' };
+    // Map theme name to data-theme attribute value.
+    // A theme missing from this map falls through to its raw name, which only
+    // works by coincidence — register new themes here explicitly.
+    const attrMap = {
+      forest: '',
+      ocean: 'ocean',
+      dark: 'dark',
+      midnight: 'midnight',
+      sunset: 'sunset',
+      metallic: 'metallic',
+      regalia: 'regalia',
+    };
     document.documentElement.setAttribute('data-theme', attrMap[theme] ?? theme);
     set({ activeTheme: theme });
   },

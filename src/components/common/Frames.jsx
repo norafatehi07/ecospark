@@ -703,3 +703,258 @@ export const PrimeFrame = () => (
     </g>
   </svg>
 );
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🧫 BIO-CIRCUIT WEAVE — Quantum Tier (75,000 pts)
+// Living circuitry grown from photosynthetic silicon. Data-sap flows through
+// glowing traces; hex lattices rotate; leaf-chips blink like status LEDs.
+// ═══════════════════════════════════════════════════════════════════════════════
+export const BiocircuitFrame = () => (
+  <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+    <SharedDefs />
+    <defs>
+      <linearGradient id="bio-ring" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#67E8F9" />
+        <stop offset="30%" stopColor="#22D3EE" />
+        <stop offset="55%" stopColor="#34D399" />
+        <stop offset="80%" stopColor="#A3E635" />
+        <stop offset="100%" stopColor="#0891B2" />
+      </linearGradient>
+      <radialGradient id="bio-aura" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stopColor="#22D3EE" stopOpacity=".45" />
+        <stop offset="60%" stopColor="#0E7490" stopOpacity=".2" />
+        <stop offset="100%" stopColor="#164E63" stopOpacity="0" />
+      </radialGradient>
+    </defs>
+    <style>{`
+      @keyframes bio-spin { 100% { transform: rotate(360deg); } }
+      @keyframes bio-rev { 100% { transform: rotate(-360deg); } }
+      @keyframes bio-pulse { 0%,100%{opacity:.35;transform:scale(1)} 50%{opacity:.95;transform:scale(1.08)} }
+      @keyframes bio-flow { 100% { stroke-dashoffset: -120; } }
+      @keyframes bio-blink { 0%,100%{opacity:.2} 50%{opacity:1} }
+      .bio-aura { transform-origin:50px 50px; animation: bio-pulse 3.5s ease-in-out infinite; }
+      .bio-o { transform-origin:50px 50px; animation: bio-spin 24s linear infinite; }
+      .bio-i { transform-origin:50px 50px; animation: bio-rev 16s linear infinite; }
+      .bio-flow { animation: bio-flow 3s linear infinite; }
+      .bio-b1 { animation: bio-blink 1.8s ease-in-out infinite; }
+      .bio-b2 { animation: bio-blink 1.8s ease-in-out infinite .45s; }
+      .bio-b3 { animation: bio-blink 1.8s ease-in-out infinite .9s; }
+      .bio-b4 { animation: bio-blink 1.8s ease-in-out infinite 1.35s; }
+    `}</style>
+    <g mask="url(#center-hole)">
+      {/* Breathing photonic aura */}
+      <circle cx="50" cy="50" r="49" fill="url(#bio-aura)" className="bio-aura" />
+      {/* Primary bio-metal ring */}
+      <circle cx="50" cy="50" r="42" fill="none" stroke="url(#bio-ring)" strokeWidth="7" filter="url(#glow-lg)" />
+      <circle cx="50" cy="50" r="46.5" fill="none" stroke="#22D3EE" strokeWidth=".8" opacity=".5" />
+      <circle cx="50" cy="50" r="37.5" fill="none" stroke="#A3E635" strokeWidth=".6" opacity=".4" />
+      {/* Flowing data-sap ring */}
+      <circle cx="50" cy="50" r="44.5" fill="none" stroke="#67E8F9" strokeWidth="1.4" strokeDasharray="5 15" className="bio-flow" filter="url(#glow-sm)" />
+      {/* Circuit traces at corners with flowing packets */}
+      <g stroke="#22D3EE" strokeWidth="1" fill="none" opacity=".9">
+        <path d="M 8 26 H 20 L 28 18 V 8" strokeDasharray="3 6" className="bio-flow" />
+        <path d="M 92 26 H 80 L 72 18 V 8" strokeDasharray="3 6" className="bio-flow" />
+        <path d="M 8 74 H 20 L 28 82 V 92" strokeDasharray="3 6" className="bio-flow" />
+        <path d="M 92 74 H 80 L 72 82 V 92" strokeDasharray="3 6" className="bio-flow" />
+      </g>
+      {/* Terminal nodes (status LEDs) */}
+      <circle cx="8" cy="26" r="2" fill="#67E8F9" filter="url(#glow-md)" className="bio-b1" />
+      <circle cx="92" cy="26" r="2" fill="#A3E635" filter="url(#glow-md)" className="bio-b2" />
+      <circle cx="8" cy="74" r="2" fill="#A3E635" filter="url(#glow-md)" className="bio-b3" />
+      <circle cx="92" cy="74" r="2" fill="#67E8F9" filter="url(#glow-md)" className="bio-b4" />
+      {/* Rotating hex lattices */}
+      <g className="bio-o">
+        <polygon points="50,4 89.8,27 89.8,73 50,96 10.2,73 10.2,27" fill="none" stroke="#22D3EE" strokeWidth=".9" strokeDasharray="4 3" opacity=".55" />
+      </g>
+      <g className="bio-i">
+        <polygon points="50,10 84.6,30 84.6,70 50,90 15.4,70 15.4,30" fill="none" stroke="#34D399" strokeWidth=".6" strokeDasharray="2 4" opacity=".5" />
+        <rect x="46.5" y="6.5" width="7" height="7" rx="1.5" fill="#0E7490" stroke="#67E8F9" strokeWidth=".7" />
+        <rect x="46.5" y="86.5" width="7" height="7" rx="1.5" fill="#0E7490" stroke="#A3E635" strokeWidth=".7" />
+      </g>
+      {/* Photosynthetic leaf-chip crest */}
+      <g filter="url(#glow-md)">
+        <path d="M 50 2 Q 58 8 50 16 Q 42 8 50 2 Z" fill="#34D399" stroke="#A7F3D0" strokeWidth=".7" />
+        <path d="M 50 4 V 14" stroke="#ECFDF5" strokeWidth=".6" opacity=".8" />
+      </g>
+      {/* Pulse sparks */}
+      <circle cx="50" cy="94" r="2.4" fill="#67E8F9" filter="url(#glow-lg)" className="bio-b2" />
+      <circle cx="6" cy="50" r="2" fill="#22D3EE" filter="url(#glow-md)" className="bio-b3" />
+      <circle cx="94" cy="50" r="2" fill="#A3E635" filter="url(#glow-md)" className="bio-b4" />
+    </g>
+  </svg>
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🧬 GENESIS HELIX — Mythic Tier (120,000 pts)
+// Twin strands of terraforming light orbit the avatar — the blueprint of a
+// reborn biosphere. Emerald-gold nucleotide orbs, floating DNA crest.
+// ═══════════════════════════════════════════════════════════════════════════════
+export const HelixFrame = () => (
+  <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+    <SharedDefs />
+    <defs>
+      <linearGradient id="hx-ring" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#BBF7D0" />
+        <stop offset="30%" stopColor="#4ADE80" />
+        <stop offset="55%" stopColor="#FDE047" />
+        <stop offset="80%" stopColor="#22C55E" />
+        <stop offset="100%" stopColor="#15803D" />
+      </linearGradient>
+      <radialGradient id="hx-aura" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stopColor="#4ADE80" stopOpacity=".5" />
+        <stop offset="60%" stopColor="#16A34A" stopOpacity=".22" />
+        <stop offset="100%" stopColor="#14532D" stopOpacity="0" />
+      </radialGradient>
+      <filter id="hx-glow" x="-80%" y="-80%" width="260%" height="260%">
+        <feGaussianBlur stdDeviation="12" result="blur" />
+        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+      </filter>
+    </defs>
+    <style>{`
+      @keyframes hx-spin { 100% { transform: rotate(360deg); } }
+      @keyframes hx-rev { 100% { transform: rotate(-360deg); } }
+      @keyframes hx-pulse { 0%,100%{opacity:.4;transform:scale(1)} 50%{opacity:.95;transform:scale(1.1)} }
+      @keyframes hx-float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+      @keyframes hx-tw { 0%,100%{opacity:0;transform:scale(.3)} 50%{opacity:1;transform:scale(1.4)} }
+      .hx-aura { transform-origin:50px 50px; animation: hx-pulse 4s ease-in-out infinite; }
+      .hx-a { transform-origin:50px 50px; animation: hx-spin 12s linear infinite; }
+      .hx-b { transform-origin:50px 50px; animation: hx-rev 12s linear infinite; }
+      .hx-rungs { transform-origin:50px 50px; animation: hx-spin 30s linear infinite; }
+      .hx-crest { transform-origin:50px 6px; animation: hx-float 3s ease-in-out infinite; }
+      .hx-t1 { transform-origin:center; animation: hx-tw 2.2s ease-in-out infinite; }
+      .hx-t2 { transform-origin:center; animation: hx-tw 2.2s ease-in-out infinite .55s; }
+      .hx-t3 { transform-origin:center; animation: hx-tw 2.2s ease-in-out infinite 1.1s; }
+      .hx-t4 { transform-origin:center; animation: hx-tw 2.2s ease-in-out infinite 1.65s; }
+    `}</style>
+    <g mask="url(#center-hole)">
+      {/* Biosphere aura */}
+      <circle cx="50" cy="50" r="49" fill="url(#hx-aura)" className="hx-aura" />
+      <circle cx="50" cy="50" r="49" fill="none" stroke="#4ADE80" strokeWidth="3" opacity=".22" filter="url(#hx-glow)" className="hx-aura" />
+      {/* Primary emerald-gold ring */}
+      <circle cx="50" cy="50" r="43" fill="none" stroke="url(#hx-ring)" strokeWidth="7" filter="url(#glow-lg)" />
+      <circle cx="50" cy="50" r="47" fill="none" stroke="#BBF7D0" strokeWidth=".9" opacity=".45" />
+      {/* Strand A — terraforming light band */}
+      <g className="hx-a">
+        <ellipse cx="50" cy="50" rx="46" ry="15" fill="none" stroke="#4ADE80" strokeWidth="1.6" opacity=".8" filter="url(#glow-md)" transform="rotate(28 50 50)" />
+        <circle cx="96" cy="50" r="3" fill="#BBF7D0" filter="url(#glow-lg)" transform="rotate(28 50 50)" />
+        <circle cx="4" cy="50" r="3" fill="#4ADE80" filter="url(#glow-lg)" transform="rotate(28 50 50)" />
+      </g>
+      {/* Strand B — counter-rotating golden band */}
+      <g className="hx-b">
+        <ellipse cx="50" cy="50" rx="46" ry="15" fill="none" stroke="#FDE047" strokeWidth="1.3" opacity=".7" filter="url(#glow-md)" transform="rotate(-28 50 50)" />
+        <circle cx="96" cy="50" r="2.6" fill="#FEF9C3" filter="url(#glow-lg)" transform="rotate(-28 50 50)" />
+        <circle cx="4" cy="50" r="2.6" fill="#FDE047" filter="url(#glow-lg)" transform="rotate(-28 50 50)" />
+      </g>
+      {/* Base-pair rungs */}
+      <g className="hx-rungs">
+        <circle cx="50" cy="50" r="45" fill="none" stroke="#86EFAC" strokeWidth="2.2" strokeDasharray="1.2 10" opacity=".7" />
+      </g>
+      {/* Floating DNA crest */}
+      <g className="hx-crest" filter="url(#glow-lg)">
+        <path d="M 42 -6 Q 50 0 58 -6" fill="none" stroke="#4ADE80" strokeWidth="1.6" />
+        <path d="M 42 6 Q 50 0 58 6" fill="none" stroke="#FDE047" strokeWidth="1.6" />
+        <path d="M 44 -3.5 L 56 3.5 M 44 3.5 L 56 -3.5 M 50 -1.5 V 1.5" stroke="#ECFDF5" strokeWidth=".7" opacity=".9" />
+        <circle cx="42" cy="-6" r="1.8" fill="#BBF7D0" />
+        <circle cx="58" cy="-6" r="1.8" fill="#FDE047" />
+        <circle cx="42" cy="6" r="1.8" fill="#FDE047" />
+        <circle cx="58" cy="6" r="1.8" fill="#BBF7D0" />
+      </g>
+      {/* Spore sparkles */}
+      <path d="M 18 20 L 19 25 L 24 26 L 19 27 L 18 32 L 17 27 L 12 26 L 17 25 Z" fill="#BBF7D0" filter="url(#glow-md)" className="hx-t1" />
+      <path d="M 82 20 L 83 25 L 88 26 L 83 27 L 82 32 L 81 27 L 76 26 L 81 25 Z" fill="#FDE047" filter="url(#glow-md)" className="hx-t2" />
+      <path d="M 18 70 L 19 75 L 24 76 L 19 77 L 18 82 L 17 77 L 12 76 L 17 75 Z" fill="#FDE047" filter="url(#glow-md)" className="hx-t3" />
+      <path d="M 82 70 L 83 75 L 88 76 L 83 77 L 82 82 L 81 77 L 76 76 L 81 75 Z" fill="#BBF7D0" filter="url(#glow-md)" className="hx-t4" />
+      {/* Root-system energy wave */}
+      <path d="M 12 82 Q 30 106 50 97 Q 70 106 88 82" fill="none" stroke="#4ADE80" strokeWidth="2" opacity=".65" filter="url(#glow-lg)" />
+      <path d="M 18 85 Q 34 102 50 95 Q 66 102 82 85" fill="none" stroke="#FDE047" strokeWidth="1" opacity=".5" filter="url(#glow-md)" />
+      <circle cx="50" cy="96" r="2.8" fill="#BBF7D0" filter="url(#glow-lg)" className="hx-t2" />
+    </g>
+  </svg>
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🌌 VERDANT SINGULARITY — Singularity Tier (250,000 pts)
+// A collapsed star of pure life-energy. Emerald-fuchsia accretion disk,
+// photon ring flicker, matter spiralling inward, gravitational lens arcs.
+// ═══════════════════════════════════════════════════════════════════════════════
+export const SingularityFrame = () => (
+  <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+    <SharedDefs />
+    <defs>
+      <linearGradient id="sg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#F0ABFC" />
+        <stop offset="30%" stopColor="#A21CAF" />
+        <stop offset="55%" stopColor="#34D399" />
+        <stop offset="80%" stopColor="#6D28D9" />
+        <stop offset="100%" stopColor="#F0ABFC" />
+      </linearGradient>
+      <radialGradient id="sg-aura" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stopColor="#2E1065" stopOpacity=".8" />
+        <stop offset="55%" stopColor="#A21CAF" stopOpacity=".3" />
+        <stop offset="100%" stopColor="#000000" stopOpacity="0" />
+      </radialGradient>
+      <filter id="sg-glow" x="-90%" y="-90%" width="280%" height="280%">
+        <feGaussianBlur stdDeviation="13" result="blur" />
+        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+      </filter>
+    </defs>
+    <style>{`
+      @keyframes sg-fast { 100% { transform: rotate(360deg); } }
+      @keyframes sg-rev { 100% { transform: rotate(-360deg); } }
+      @keyframes sg-pulse { 0%,100%{opacity:.35;transform:scale(1)} 50%{opacity:.9;transform:scale(1.1)} }
+      @keyframes sg-flicker { 0%,100%{opacity:.35} 20%{opacity:1} 45%{opacity:.25} 70%{opacity:.85} }
+      @keyframes sg-fall { 0%{opacity:0;transform:scale(1) rotate(0deg)} 25%{opacity:1} 100%{opacity:0;transform:scale(.08) rotate(220deg)} }
+      @keyframes sg-tw { 0%,100%{opacity:0;transform:scale(.2)} 50%{opacity:1;transform:scale(1.6)} }
+      .sg-aura { transform-origin:50px 50px; animation: sg-pulse 3.8s ease-in-out infinite; }
+      .sg-d1 { transform-origin:50px 50px; animation: sg-fast 7s linear infinite; }
+      .sg-d2 { transform-origin:50px 50px; animation: sg-rev 12s linear infinite; }
+      .sg-d3 { transform-origin:50px 50px; animation: sg-fast 24s linear infinite; }
+      .sg-ph { animation: sg-flicker 2.4s ease-in-out infinite; }
+      .sg-f1 { transform-origin:50px 50px; animation: sg-fall 3.2s ease-in infinite; }
+      .sg-f2 { transform-origin:50px 50px; animation: sg-fall 3.2s ease-in infinite 1.1s; }
+      .sg-f3 { transform-origin:50px 50px; animation: sg-fall 3.2s ease-in infinite 2.2s; }
+      .sg-t1 { transform-origin:center; animation: sg-tw 2s ease-in-out infinite; }
+      .sg-t2 { transform-origin:center; animation: sg-tw 2s ease-in-out infinite .66s; }
+      .sg-t3 { transform-origin:center; animation: sg-tw 2s ease-in-out infinite 1.33s; }
+    `}</style>
+    <g mask="url(#center-hole)">
+      {/* Gravity-well aura */}
+      <circle cx="50" cy="50" r="49" fill="url(#sg-aura)" className="sg-aura" />
+      {/* Accretion disk — three counter-rotating dashed rings */}
+      <g className="sg-d1">
+        <circle cx="50" cy="50" r="47" fill="none" stroke="#F0ABFC" strokeWidth="1.6" strokeDasharray="14 8" opacity=".75" filter="url(#glow-md)" />
+      </g>
+      <g className="sg-d2">
+        <circle cx="50" cy="50" r="44.5" fill="none" stroke="#34D399" strokeWidth="1.2" strokeDasharray="8 12" opacity=".65" filter="url(#glow-md)" />
+      </g>
+      <g className="sg-d3">
+        <circle cx="50" cy="50" r="48.5" fill="none" stroke="#A78BFA" strokeWidth=".7" strokeDasharray="3 9" opacity=".5" />
+      </g>
+      {/* Primary singularity ring */}
+      <circle cx="50" cy="50" r="42" fill="none" stroke="url(#sg-grad)" strokeWidth="6" filter="url(#sg-glow)" />
+      {/* Event horizon + photon ring */}
+      <circle cx="50" cy="50" r="37" fill="none" stroke="#0A0A0F" strokeWidth="3" opacity=".85" />
+      <circle cx="50" cy="50" r="38.6" fill="none" stroke="#F0ABFC" strokeWidth=".9" className="sg-ph" filter="url(#glow-md)" />
+      {/* Gravitational lens arcs */}
+      <path d="M 14 30 Q 50 12 86 30" fill="none" stroke="#E9D5FF" strokeWidth=".8" opacity=".5" filter="url(#glow-sm)" />
+      <path d="M 14 70 Q 50 88 86 70" fill="none" stroke="#A7F3D0" strokeWidth=".8" opacity=".5" filter="url(#glow-sm)" />
+      {/* Matter spiralling inward */}
+      <g className="sg-f1"><circle cx="18" cy="18" r="2.4" fill="#F0ABFC" filter="url(#glow-md)" /></g>
+      <g className="sg-f2"><circle cx="84" cy="26" r="2" fill="#34D399" filter="url(#glow-md)" /></g>
+      <g className="sg-f3"><circle cx="24" cy="82" r="2.2" fill="#A78BFA" filter="url(#glow-md)" /></g>
+      {/* Collapsed-star crest at top */}
+      <g filter="url(#sg-glow)">
+        <circle cx="50" cy="2" r="5" fill="#0A0A0F" stroke="#F0ABFC" strokeWidth="1.2" className="sg-ph" />
+        <path d="M 50 -8 V -4 M 50 8 V 12 M 40 2 H 44 M 56 2 H 60" stroke="#E9D5FF" strokeWidth=".9" opacity=".8" />
+        <circle cx="50" cy="2" r="2" fill="#34D399" className="sg-t2" />
+      </g>
+      {/* Bloom stars along the horizon */}
+      <path d="M 14 50 L 15 55 L 20 56 L 15 57 L 14 62 L 13 57 L 8 56 L 13 55 Z" fill="#F0ABFC" filter="url(#glow-lg)" className="sg-t1" />
+      <path d="M 86 50 L 87 55 L 92 56 L 87 57 L 86 62 L 85 57 L 80 56 L 85 55 Z" fill="#34D399" filter="url(#glow-lg)" className="sg-t2" />
+      <path d="M 50 86 L 51 91 L 56 92 L 51 93 L 50 98 L 49 93 L 44 92 L 49 91 Z" fill="#A78BFA" filter="url(#glow-lg)" className="sg-t3" />
+      {/* Bottom accretion wave */}
+      <path d="M 10 80 Q 30 108 50 99 Q 70 108 90 80" fill="none" stroke="#A21CAF" strokeWidth="2.2" opacity=".6" filter="url(#glow-lg)" />
+      <path d="M 16 83 Q 34 104 50 96 Q 66 104 84 83" fill="none" stroke="#34D399" strokeWidth="1" opacity=".5" filter="url(#glow-md)" />
+    </g>
+  </svg>
+);

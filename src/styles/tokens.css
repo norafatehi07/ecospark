@@ -35,6 +35,9 @@
   --font-display: 'Manrope', system-ui, sans-serif;
   --font-body: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  /* Ceremonial serif — landing hero, tier-reveal item names, Celestial titles.
+     Deliberately NOT used for UI chrome, tables, or body copy. */
+  --font-ceremonial: 'Fraunces', 'Instrument Serif', Georgia, serif;
 
   --text-xs: clamp(0.65rem, 1.5vw, 0.75rem);
   --text-sm: clamp(0.8rem, 1.8vw, 0.875rem);
@@ -330,6 +333,130 @@
   --text-xs: 1rem;
   --text-lg: 1.5rem;
   --text-xl: 1.875rem;
+}
+
+/* ============================================================
+   CELESTIAL AURORA
+   Reserved for the top reward tier (Celestial / frame-prime) and nothing else.
+   Registering --gradient-angle as an <angle> is what makes the conic gradient
+   animatable at all; a plain custom property would jump, not sweep.
+   ============================================================ */
+@property --gradient-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.celestial-aurora {
+  background: conic-gradient(
+    from var(--gradient-angle),
+    #7C3AED, #22D3EE, #F59E0B, #7C3AED
+  );
+  animation: aurora-spin 6s linear infinite;
+}
+
+@keyframes aurora-spin {
+  to { --gradient-angle: 360deg; }
+}
+
+/* ============================================================
+   GROWTH RINGS — the Regalia signature motif
+   Concentric rings, read as tree growth rings / ripples. Ring count and
+   ornamentation scale with tier: "grown further" encoded visually.
+   Consumed by src/components/common/GrowthRings.jsx.
+   ============================================================ */
+@keyframes ring-drift {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes ring-pulse {
+  0%   { transform: scale(0.82); opacity: 0.85; }
+  70%  { opacity: 0; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+@keyframes ring-breathe {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 0.9; }
+}
+
+/* Honour both the OS setting and the in-app override.
+   The globals.css blanket rule collapses durations to 0.01ms, which would leave
+   these mid-sweep; killing the animation outright is the legible end state. */
+@media (prefers-reduced-motion: reduce) {
+  .celestial-aurora { animation: none; }
+}
+
+[data-reduced-motion="true"] .celestial-aurora { animation: none; }
+
+
+/* ------------------------------------------
+   REGALIA THEME — flagship identity
+   Deep obsidian-emerald base, gold ceremonial accent.
+   Hairline borders are GOLD, not green: that single choice is what stops this
+   reading as "another dark mode" and starts it reading as ceremonial.
+
+   Contrast measured against --color-bg #0A0F0C (same convention as midnight):
+     --color-text           #F3F6F1 → 17.3:1  (AAA)
+     --color-text-secondary #A8BCA9 →  8.6:1  (AAA)
+     --color-text-tertiary  #6E8770 →  4.6:1  (AA, body text min)
+   Against the lightest surface --color-surface-raised #1C2A1E:
+     --color-text           #F3F6F1 → 13.1:1  (AAA)
+     --color-text-secondary #A8BCA9 →  6.5:1  (AA)
+     --color-text-tertiary  #6E8770 →  3.5:1  → LARGE TEXT / NON-TEXT ONLY.
+   Do not use --color-text-tertiary for body copy on raised surfaces.
+
+   The amethyst→cyan→gold aurora is reserved for the Celestial tier alone.
+   Its rarity is the design; do not reach for it elsewhere.
+------------------------------------------ */
+[data-theme="regalia"] {
+  --color-primary: #1FA463;
+  --color-primary-light: #34C880;
+  --color-primary-dark: #0F5132;
+  --color-primary-rgb: 31, 164, 99;
+
+  /* amethyst — already the platinum tier colour, so this reuses existing equity */
+  --color-secondary: #7C3AED;
+  --color-secondary-light: #A78BFA;
+  --color-secondary-dark: #5B21B6;
+
+  --glass-bg: rgba(10, 15, 12, 0.78);
+  --glass-bg-strong: rgba(10, 15, 12, 0.92);
+  --glass-border: 1px solid rgba(245, 158, 11, 0.16);
+  --glass-blur: blur(22px);
+  --glass-blur-sm: blur(12px);
+
+  --color-bg: #0A0F0C;
+  --color-bg-card: #10160F;
+  --color-bg-elevated: #161F16;
+  --color-surface: #161F16;
+  --color-surface-raised: #1C2A1E;
+
+  --color-border: rgba(245, 158, 11, 0.10);
+  --color-border-strong: rgba(245, 158, 11, 0.28);
+
+  --color-text: #F3F6F1;
+  --color-text-secondary: #A8BCA9;
+  --color-text-tertiary: #6E8770;
+  --color-text-inverse: #0A0F0C;
+
+  /* Depth via gold hairline brightness first, drop shadow second */
+  --elevation-0: none;
+  --elevation-1: 0 0 0 1px rgba(245, 158, 11, 0.06);
+  --elevation-2: 0 0 0 1px rgba(245, 158, 11, 0.10), 0 4px 14px rgba(0, 0, 0, 0.55);
+  --elevation-3: 0 0 0 1px rgba(245, 158, 11, 0.16), 0 10px 28px rgba(0, 0, 0, 0.70);
+  --elevation-4: 0 0 0 1px rgba(245, 158, 11, 0.22), 0 20px 48px rgba(0, 0, 0, 0.80);
+
+  --glow-primary: 0 0 22px rgba(31, 164, 99, 0.50), 0 0 8px rgba(31, 164, 99, 0.30);
+  --glow-gold: 0 0 22px rgba(245, 158, 11, 0.55), 0 0 8px rgba(245, 158, 11, 0.32);
+  --glow-celestial:
+    0 0 40px rgba(124, 58, 237, 0.55),
+    0 0 20px rgba(34, 211, 238, 0.40),
+    0 0 10px rgba(245, 158, 11, 0.50);
+
+  --color-streak: #FF8C5A;
+  --color-streak-glow: rgba(255, 140, 90, 0.4);
 }
 
 /* ------------------------------------------

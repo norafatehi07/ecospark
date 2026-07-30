@@ -1,19 +1,12 @@
 // api/verify.js — Gemini Vision photo verification (async)
+//
+// Caller must present a verified Firebase ID token, and may only verify their
+// own submission. Image and verification criteria are read from stored
+// documents, never from the request body — see audit finding A-4.
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import admin from 'firebase-admin';
+import { db, FieldValue } from './_lib/firebaseAdmin.js';
+import { requireUser } from './_lib/auth.js';
 
-// Initialize Firebase Admin (use service account in production)
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-  });
-}
-
-const db = admin.firestore();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 async function fetchImageAsBase64(url) {
@@ -83,21 +76,71 @@ async function callGeminiWithRetry(imagePart, prompt, maxRetries = 2) {
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { submissionId, imageUrl, taskPrompt } = req.body;
-
-  if (!submissionId || !imageUrl || !taskPrompt) {
-    return res.status(400).json({ error: 'submissionId, imageUrl, and taskPrompt required' });
+  // ── Caller authentication (audit finding A-4) ──
+  // This endpoint writes submission status with Admin SDK privileges. Without
+  // a caller check, anyone could mark any submission approved by posting its
+  // id — and, because the prompt used to come from the request body, could
+  // also choose the criteria it was judged against.
+  let caller;
+  try {
+    caller = await requireUser(req);
+  } catch (err) {
+    return res.status(err.status || 401).json({ error: err.publicMessage || 'Sign in to continue.' });
   }
 
-  const submissionRef = db.collection('submissions').doc(submissionId);
+  const { submissionId } = req.body || {};
+  if (!submissionId) {
+    return res.status(400).json({ error: 'submissionId is required' });
+  }
+
+  const submissionRef = db.collection('submissions').doc(String(submissionId));
+  const submissionSnap = await submissionRef.get();
+  if (!submissionSnap.exists) {
+    return res.status(404).json({ error: 'Submission not found' });
+  }
+  const submission = submissionSnap.data();
+
+  // Only the author may trigger verification of their own submission; staff may
+  // re-run one that was flagged for review.
+  const isAuthor = submission.userId === caller.uid;
+  if (!isAuthor && !caller.isStaff) {
+    return res.status(403).json({ error: 'That submission is not yours.' });
+  }
+
+  // Verification runs once. Re-running a decided submission is how a rejection
+  // would otherwise be retried until it passed.
+  const rerunnable = caller.isStaff && submission.status === 'flagged';
+  if (submission.status !== 'pending' && !rerunnable) {
+    return res.status(409).json({
+      error: 'This submission has already been reviewed.',
+      status: submission.status,
+    });
+  }
+
+  // Image and criteria come from stored data, never from the request body.
+  const imageUrl = submission.imageUrl;
+  if (!imageUrl) {
+    return res.status(400).json({ error: 'This submission has no photo attached.' });
+  }
+
+  let taskPrompt = submission.verificationPrompt || null;
+  if (submission.taskId) {
+    const taskSnap = await db.collection('tasks').doc(String(submission.taskId)).get();
+    if (taskSnap.exists) {
+      const task = taskSnap.data();
+      // The catalog task is the authoritative source when it exists.
+      taskPrompt = task.verificationPrompt || task.description || taskPrompt;
+    }
+  }
+  if (!taskPrompt) {
+    return res.status(400).json({ error: 'This task has no verification criteria.' });
+  }
 
   try {
-    // Ensure doc exists with pending status
-    await submissionRef.set({ status: 'pending', updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
-
     const imagePart = await fetchImageAsBase64(imageUrl);
     const verificationPrompt = `You are verifying a student's eco-action photo submission for a sustainability app.
 
@@ -138,9 +181,9 @@ Respond with a confidence score where:
       confidence,
       reason: result.reason,
       needsAudit: confidence >= 0.3 && confidence < 0.5,
-      approvedAt: status === 'approved' ? admin.firestore.FieldValue.serverTimestamp() : null,
-      flaggedAt: status === 'flagged' ? admin.firestore.FieldValue.serverTimestamp() : null,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      approvedAt: status === 'approved' ? FieldValue.serverTimestamp() : null,
+      flaggedAt: status === 'flagged' ? FieldValue.serverTimestamp() : null,
+      updatedAt: FieldValue.serverTimestamp(),
     });
 
     return res.status(200).json({ submissionId, status, reason: result.reason, confidence });
@@ -158,8 +201,8 @@ Respond with a confidence score where:
         ? 'Verification timed out — flagged for manual review'
         : `Verification error: ${err.message}`,
       error: err.message,
-      flaggedAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      flaggedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
 
     return res.status(500).json({ error: 'Verification failed', details: err.message });

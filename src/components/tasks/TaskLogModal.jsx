@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { compressImageToBase64 } from '../../lib/imageUtils';
 import { useAuthStore } from '../../store/authStore';
-import { createSubmission, subscribeSubmission, awardPointsAndUpdateStreak } from '../../services/firestoreService';
+import { createSubmission, subscribeSubmission } from '../../services/firestoreService';
+import { awardTaskPoints } from '../../services/economyService';
 import { verifyTaskPhoto } from '../../services/aiService';
 import toast from 'react-hot-toast';
 import PremiumIcon from '../common/PremiumIcon';
@@ -68,6 +69,7 @@ export default function TaskLogModal({ task, onClose, onSuccess }) {
         co2: task.co2 || 0,
         water: task.water || 0,
         waste: task.waste || 0,
+        verificationPrompt: task.verificationPrompt || task.description || null,
       });
       setSubmissionId(subId);
       setStage('pending');
@@ -115,14 +117,21 @@ export default function TaskLogModal({ task, onClose, onSuccess }) {
           setStage(status);
           setReason(r || '');
 
-          // Award points on approval
+          // Award points on approval.
+          // The server reads the point value from the submission record and
+          // keys the ledger entry on the submission id, so a repeated
+          // onSnapshot callback cannot award twice.
           if (status === 'approved' && profile) {
-            await awardPointsAndUpdateStreak(user.uid, task.id, task.points || 50, {
-              co2: task.co2 || 0,
-              water: task.water || 0,
-              waste: task.waste || 0,
-            });
-            toast.success(<span>+{task.points || 50} points earned! <PremiumIcon icon={Leaf} color="emerald" size={16} /></span>);
+            try {
+              const result = await awardTaskPoints(subId);
+              const earned = result.points ?? task.points ?? 50;
+              if (!result.duplicate) {
+                toast.success(<span>+{earned} points earned! <PremiumIcon icon={Leaf} color="emerald" size={16} /></span>);
+              }
+            } catch (err) {
+              console.error('[TaskLogModal] award failed', err);
+              toast.error(err.message || "Your task was approved, but the points didn't land. They'll be retried.");
+            }
           }
 
           // Delay closing the modal for 3.5 seconds so the user can read the AI's reasoning!

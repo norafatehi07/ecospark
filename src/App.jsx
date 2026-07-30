@@ -10,6 +10,7 @@ import { useSettingsStore } from './store/settingsStore';
 
 import AppShell from './components/layout/AppShell';
 import ProtectedRoute from './components/common/ProtectedRoute';
+import { RingSpinner } from './components/common/GrowthRings';
 
 // Pages (lazy-loaded)
 const Home = React.lazy(() => import('./pages/Home'));
@@ -74,6 +75,9 @@ function LoadingScreen() {
       <p style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}>
         Loading experience...
       </p>
+      {/* Ring pulse rather than a generic spinner — the Regalia motif, and the
+          only ornament on this screen. */}
+      <RingSpinner size={36} color="var(--color-primary)" label="Loading EcoSpark" />
     </div>
   );
 }
@@ -114,7 +118,9 @@ export default function App() {
 
   // Apply saved preferences on mount
   useEffect(() => {
-    const theme = localStorage.getItem('ecospark-theme') || 'metallic';
+    // Regalia is the flagship default for new installs. Anyone who has already
+    // picked a theme keeps it — this only changes the no-preference fallback.
+    const theme = localStorage.getItem('ecospark-theme') || 'regalia';
     const reducedMotion = localStorage.getItem('ecospark-reduced-motion') === 'true'
       || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     const textSize = localStorage.getItem('ecospark-text-size') || 'normal';
