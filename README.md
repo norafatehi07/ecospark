@@ -1,53 +1,44 @@
-# EcoSpark 🌱
+<div align="center">
+  <h1>EcoSpark 🌱</h1>
+  <p><strong>A Next-Gen Gamified Sustainability Ecosystem & Prediction Market</strong></p>
+</div>
 
-**Gamified Sustainability Habit Tracker for Students**
+## 💡 Inspiration
+Climate change and environmental sustainability are often framed with doom and gloom, leaving people feeling powerless. We wanted to build something that empowers users, makes sustainable habits **addicting**, and rewards real-world impact. We envisioned a platform that blends the addictive loops of modern games, the intelligence of state-of-the-art AI, and the thrill of prediction markets to create an unparalleled green ecosystem.
 
-Built to Awwwards-caliber standards on free-tier infrastructure. No paid APIs, no CCs required.
+## 🚀 What it does
+**EcoSpark** is a comprehensive, gamified platform where users:
+- **Complete Real-World Eco-Tasks:** From planting trees to using public transport, users snap photos to prove their impact.
+- **AI Photo Verification:** Google's Gemini Vision AI instantly verifies user submissions, granting XP and rewards to prevent cheating.
+- **AI Eco-Coach:** An interactive AI assistant powered by Groq API guides users on sustainability, offering personalized tips and encouragement.
+- **Oracle Prediction Market:** A dynamic, Polymarket-style arena where users bet their earned EcoCoins on real-world environmental events (e.g., renewable energy milestones), auto-settled by Gemini AI scanning live news!
+- **Community & Leaderboards:** Compete with friends, climb global tiers (Bronze, Silver, Gold), and show off your equipped companions and cosmetic frames.
 
----
+## 🛠 How we built it
+EcoSpark is built to Awwwards-caliber standards on 100% free-tier infrastructure.
+- **Frontend & UI:** React 18, Vite, and vanilla CSS variables to support dynamic themes (including the beautiful "Regalia" gold/metallic themes).
+- **3D Experiences:** `react-three-fiber` and `@react-three/drei` for interactive 3D hero sections that degrade gracefully on lower-end devices.
+- **Backend & Database:** Firebase Auth, Firestore (with real-time `onSnapshot` syncing), and Firebase Serverless Functions (hosted on Vercel).
+- **AI Integrations:** 
+  - **Google Gemini API** (`gemini-2.5-flash`) for instantaneous photo verification and automated prediction market settlement based on current news.
+  - **Groq API** (`llama-3.3-70b-versatile`) for blazing-fast, streaming AI coaching.
+- **Live News:** Integrated GNews.io API for real-time sustainability news boards.
 
-## 🚀 Tech Stack
+## 🚧 Challenges we ran into
+- **AI Hallucinations & Verification:** Ensuring the Gemini Vision model reliably identified fake vs. real eco-tasks without false positives required careful prompt engineering and fallback timeouts.
+- **Real-Time Market Auto-Settlement:** Building a prediction market that settles itself using AI to read live news was complex. We had to ensure the AI only settled events it was highly confident about.
+- **State Management & Offline Sync:** Handling offline edge-cases for mobile users meant implementing robust local caching using Zustand so tasks queue locally and sync when reconnected.
 
-| Layer | Technology |
-|---|---|
-| Frontend | React 18 + Vite + Framer Motion |
-| 3D Hero | react-three-fiber + @react-three/drei + postprocessing |
-| Auth + DB + Storage | Firebase (Spark plan) |
-| Hosting | Vercel |
-| AI Coach | Groq API — `llama-3.3-70b-versatile` (free, streaming) |
-| AI Photo Verify | Google Gemini API — `gemini-2.5-flash` |
-| News | GNews.io |
+## 🏆 Accomplishments that we're proud of
+- Delivering a **sub-2-second streaming response time** for our AI Coach.
+- Implementing an entire **Oracle Prediction Market** from scratch, mimicking high-end Web3 markets but powered purely by Firebase and Gemini AI.
+- Developing a robust **design system** utilizing CSS variables to switch between high-contrast, accessible, and premium "Regalia" themes without losing performance.
+- Keeping the entire infrastructure **100% free** without compromising on a premium user experience.
 
----
-
-## 📋 Prerequisites — API Keys (All Free, No Credit Card)
-
-### 1. Firebase
-1. Go to https://console.firebase.google.com
-2. Create a new project (Spark/free plan — no card needed)
-3. Enable **Authentication** → Sign-in methods → Email/Password + Google
-4. Enable **Firestore Database** (start in test mode, then apply `firestore.rules`)
-5. Enable **Storage** (apply `storage.rules`)
-6. Go to Project Settings → Your apps → Add web app → Copy the config
-
-### 2. Groq (AI Coach)
-1. Go to https://console.groq.com
-2. Sign up (no credit card)
-3. Go to API Keys → Create API Key
-
-### 3. Google Gemini (Photo Verification)
-1. Go to https://aistudio.google.com/app/apikey
-2. Sign in with Google → Create API Key
-3. Use the **free tier** — do NOT use Gemini Pro (too few daily requests)
-
-### 4. GNews (News Board)
-1. Go to https://gnews.io
-2. Sign up → Dashboard → Copy your API key
-
-### 5. Firebase Admin (for Vercel serverless functions)
-1. Firebase Console → Project Settings → Service Accounts
-2. Generate new private key → download the JSON
-3. Extract `project_id`, `client_email`, `private_key` from the JSON
+## 🔮 What's next for EcoSpark
+- **Smart Device Integration:** Syncing with smart home devices (like smart plugs) to automatically verify energy savings.
+- **School & Corporate Leagues:** Dedicated dashboards for schools or companies to track collective carbon offset.
+- **Enhanced Prediction Markets:** Expanding the Oracle to include a wider array of community-submitted eco-bets and live data streams.
 
 ---
 
@@ -55,7 +46,7 @@ Built to Awwwards-caliber standards on free-tier infrastructure. No paid APIs, n
 
 ```bash
 # Clone and install
-git clone <your-repo-url> ecospark
+git clone https://github.com/ayalpha/ecospark-codenova-2026.git ecospark
 cd ecospark
 npm install
 
@@ -63,133 +54,56 @@ npm install
 cp .env.example .env
 ```
 
-Fill in your `.env` file:
-```
+Fill in your `.env` file (API keys are all free, no credit card required):
+```env
 VITE_FIREBASE_API_KEY=...
 VITE_FIREBASE_AUTH_DOMAIN=...
 VITE_FIREBASE_PROJECT_ID=...
-VITE_FIREBASE_STORAGE_BUCKET=...
 VITE_FIREBASE_MESSAGING_SENDER_ID=...
 VITE_FIREBASE_APP_ID=...
 
-GROQ_API_KEY=...
-GEMINI_API_KEY=...
-GNEWS_API_KEY=...
+VITE_GROQ_API_KEY=...
+VITE_GEMINI_API_KEY=...
+VITE_GNEWS_API_KEY=...
 
 # Firebase Admin (for serverless functions)
 FIREBASE_PROJECT_ID=...
 FIREBASE_CLIENT_EMAIL=...
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n..."
-
-# For the streak-reset cron job
-CRON_SECRET=any-random-secret-string
 ```
 
 ```bash
-# Seed the database with starter tasks and rewards
-npm run seed
-
 # Run locally (frontend only — hot reload)
 npm run dev
 ```
 
-> **Note:** AI features (coach, photo verification) and news require the serverless functions to run. For these, use `vercel dev` instead of `npm run dev`. Install Vercel CLI with `npm i -g vercel`.
-
----
-
-## 🔥 Firebase Setup
-
-### Apply Firestore Security Rules
-```bash
-# Install Firebase CLI
-npm install -g firebase-tools
-firebase login
-firebase init firestore
-
-# Deploy rules
-firebase deploy --only firestore:rules
-```
-
-### Apply Storage Rules
-```bash
-firebase deploy --only storage:rules
-```
+> **Note:** AI features (coach, photo verification, oracle) and news require the serverless functions to run. For these, deploy on Vercel or use `vercel dev`.
 
 ---
 
 ## 🌐 Vercel Deployment
 
-```bash
-# Install Vercel CLI
-npm install -g vercel
-
-# Login and deploy
-vercel login
-vercel
-
-# Set environment variables in Vercel dashboard:
-# Project Settings → Environment Variables → Add all from .env
-```
-
-Your app will be live at a `.vercel.app` URL. The streak-reset cron runs automatically at midnight UTC via Vercel Cron.
+Deploying is incredibly straightforward:
+1. Import the repository into Vercel.
+2. Ensure the framework is set to **Vite**.
+3. **Crucial:** Add all environment variables from `.env` in the Vercel Project Settings.
+4. Deploy! Your prediction market, AI coach, and gamified logic will run flawlessly via Vercel Serverless Functions.
 
 ---
 
 ## 📁 Project Structure
 
-```
+```text
 ecospark/
-├── api/                    # Vercel serverless functions
-│   ├── coach.js            # Groq streaming AI coach
-│   ├── verify.js           # Gemini photo verification
-│   ├── news.js             # GNews proxy
-│   └── streak-reset.js     # Nightly cron job
-├── public/                 # Static assets
-├── scripts/
-│   └── seed.js             # Firestore seed script
+├── api/                    # Vercel serverless functions (Coach, Verify, Admin, Economy)
+├── public/                 # Static assets & 3D textures
 ├── src/
-│   ├── components/
-│   │   ├── coach/          # AI Coach floating widget
-│   │   ├── common/         # Shared UI components
-│   │   ├── hero/           # 3D + static hero
-│   │   ├── layout/         # AppShell, Sidebar, BottomTabBar
-│   │   ├── news/           # News board + modal
-│   │   └── tasks/          # Task log modal
-│   ├── lib/
-│   │   └── firebase.js     # Firebase init
-│   ├── pages/              # Route pages
-│   ├── services/           # Data layer (AI, Firestore, News)
+│   ├── components/         # Reusable UI, 3D Hero, AI Widgets
+│   ├── lib/                # Firebase Init & Utilities
+│   ├── pages/              # Route Pages (Home, Arena, Tasks, Community)
+│   ├── services/           # Data layer (AI, Oracle, Firestore)
 │   ├── store/              # Zustand state (auth, ui, offline)
 │   └── styles/             # Design tokens + global CSS
-├── firestore.rules
-├── storage.rules
-├── vercel.json
-└── .env.example
+├── firestore.rules         # Database security rules
+└── vercel.json             # Vercel configuration
 ```
-
----
-
-## ✨ Key Features
-
-- **3 Responsive Layouts**: Mobile (bottom tab bar), Tablet (icon sidebar), Desktop (full sidebar + 3D hero)
-- **AI Photo Verification**: Gemini vision with timeout, retry, async onSnapshot — never hangs
-- **Streaming AI Coach**: Groq tokens stream live, responses start in <2s
-- **Real-time Updates**: Firestore onSnapshot everywhere — no page refreshes
-- **Offline Support**: Tasks queue locally and sync on reconnect
-- **Group Challenges**: Create/join class groups with team leaderboard
-- **Referral System**: Unique codes that award bonus points
-- **Weekly Impact Report**: Auto-generated card (shareable screenshot)
-- **Teacher Admin View**: Review AI-flagged submissions
-- **Accessibility**: 3 themes, 3 text sizes, reduced-motion, high-contrast
-
----
-
-## 🎯 Acceptance Criteria (from spec)
-
-- [x] Zero console errors, zero broken links
-- [x] No loading state hangs — all have defined timeouts with fallbacks
-- [x] Desktop and mobile are visibly different layouts
-- [x] 3D hero degrades gracefully on low-end devices
-- [x] AI coach streams tokens visibly
-- [x] Photo verification always resolves (approved / rejected / flagged)
-- [x] 100% free-tier infrastructure, no paid keys
