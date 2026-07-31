@@ -114,6 +114,7 @@
   box-shadow: var(--elevation-2);
   position: relative;
   overflow: hidden;
+  clip-path: inset(0 round var(--card-radius-lg));
   min-height: 320px;
   max-height: 500px; /* Allow it to grow slightly taller to match columns */
 }

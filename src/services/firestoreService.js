@@ -898,3 +898,35 @@ export function subscribeUserTransactions(userId, callback) {
     callback([]);
   });
 }
+
+// ─── MESSAGE EDITING & DELETION ──────────────────────────────────────────────
+
+/** Edit a message text — only allowed within 1 hour of sending */
+export async function editMessage(chatId, messageId, newText) {
+  const msgRef = doc(db, 'chats', chatId, 'messages', messageId);
+  await updateDoc(msgRef, {
+    text: newText,
+    editedAt: serverTimestamp(),
+    isEdited: true,
+  });
+}
+
+/** Delete a message (marks as deleted — keeps doc, hides content) */
+export async function deleteMessage(chatId, messageId) {
+  const msgRef = doc(db, 'chats', chatId, 'messages', messageId);
+  await updateDoc(msgRef, {
+    text: '',
+    mediaUrl: null,
+    deleted: true,
+    deletedAt: serverTimestamp(),
+  });
+}
+
+/** Delete an entire conversation for the current user only (removes from their view) */
+export async function deleteConversationForUser(chatId, userId) {
+  const chatRef = doc(db, 'chats', chatId);
+  await updateDoc(chatRef, {
+    [`deletedFor.${userId}`]: serverTimestamp(),
+  });
+}
+

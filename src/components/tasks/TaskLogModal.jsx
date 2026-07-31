@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { compressImageToBase64 } from '../../lib/imageUtils';
 import { useAuthStore } from '../../store/authStore';
 import { createSubmission, subscribeSubmission } from '../../services/firestoreService';
-import { awardTaskPoints } from '../../services/economyService';
+import { awardPointsAndUpdateStreak } from '../../services/firestoreService';
 import { verifyTaskPhoto } from '../../services/aiService';
 import toast from 'react-hot-toast';
 import PremiumIcon from '../common/PremiumIcon';
@@ -28,6 +28,7 @@ export default function TaskLogModal({ task, onClose, onSuccess }) {
   const [stage, setStage] = useState(null); // null | 'pending' | 'checking' | 'approved' | 'rejected' | 'flagged'
   const [reason, setReason] = useState('');
   const [submissionId, setSubmissionId] = useState(null);
+  const [finalData, setFinalData] = useState(null);
   const fileRef = useRef();
   const stageTimerRef = useRef(null);
   const timeoutTimerRef = useRef(null);
@@ -123,21 +124,26 @@ export default function TaskLogModal({ task, onClose, onSuccess }) {
           // onSnapshot callback cannot award twice.
           if (status === 'approved' && profile) {
             try {
-              const result = await awardTaskPoints(subId);
-              const earned = result.points ?? task.points ?? 50;
-              if (!result.duplicate) {
-                toast.success(<span>+{earned} points earned! <PremiumIcon icon={Leaf} color="emerald" size={16} /></span>);
-              }
+              const earned = task.points ?? 50;
+              await awardPointsAndUpdateStreak(user.uid, task.id, earned, {
+                co2Saved: task.impact?.co2Saved || 0,
+                waterSaved: task.impact?.waterSaved || 0,
+                treesEquivalent: task.impact?.treesEquivalent || 0,
+              });
+              toast.success(<span>+{earned} points earned! <PremiumIcon icon={Leaf} color="emerald" size={16} /></span>);
             } catch (err) {
               console.error('[TaskLogModal] award failed', err);
-              toast.error(err.message || "Your task was approved, but the points didn't land. They'll be retried.");
+              toast.error(err.message || "Failed to award points.");
             }
           }
 
-          // Delay closing the modal for 3.5 seconds so the user can read the AI's reasoning!
-          setTimeout(() => {
-            onSuccess?.(data);
-          }, 3500);
+          if (status === 'approved' || status === 'rejected' || status === 'flagged') {
+            setFinalData(data);
+            if (unsubRef.current) {
+              unsubRef.current();
+              unsubRef.current = null;
+            }
+          }
         }
       });
     } catch (err) {
@@ -283,7 +289,11 @@ export default function TaskLogModal({ task, onClose, onSuccess }) {
             </button>
           ) : isDone ? (
             <div className={styles.doneActions}>
-              <button className={styles.doneBtn} onClick={onClose} style={{display:'flex', alignItems:'center', gap:'0.5rem', justifyContent:'center'}}>
+              <button 
+                className={styles.doneBtn} 
+                onClick={stage === 'approved' ? () => onSuccess?.(finalData) : onClose} 
+                style={{display:'flex', alignItems:'center', gap:'0.5rem', justifyContent:'center'}}
+              >
                 {stage === 'approved' ? <><PremiumIcon icon={Sparkles} color="white" size={16} /> Awesome!</> : 'OK, got it'}
               </button>
               {stage !== 'approved' && (

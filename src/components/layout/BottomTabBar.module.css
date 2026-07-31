@@ -7,11 +7,8 @@
   left: 0;
   right: 0;
   height: var(--bottombar-height);
-  background: var(--glass-bg-strong);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border-top: var(--glass-border);
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.08);
+  background: var(--bg-inset);
+  border-top: 1.5px solid rgba(245, 158, 11, 0.4); /* Bolder Golden Border for mobile navbar */
   z-index: 200;
   padding: 0 4px;
   padding-bottom: env(safe-area-inset-bottom, 0);
@@ -66,7 +63,7 @@
 .activePill {
   position: absolute;
   inset: 4px;
-  background: rgba(var(--color-primary-rgb), 0.1);
+  background: var(--bg-overlay);
   border-radius: var(--radius-sm);
   z-index: 0;
 }

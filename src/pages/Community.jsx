@@ -396,9 +396,14 @@ export default function Community() {
   return (
     <div className={styles.page}>
       <div className={styles.header}>
-        <h1 className={styles.title}>Community</h1>
-        <p className={styles.subtitle} style={{display:'flex', alignItems:'center', gap:'0.5rem'}}>Share your eco-wins with classmates <PremiumIcon icon={Globe} color="sapphire" size={20} /></p>
+        <div className={styles.headerBadge}>
+          <PremiumIcon icon={Leaf} color="emerald" size={12} />
+          Eco Community
+        </div>
+        <h1 className={styles.title}>Community Feed</h1>
+        <p className={styles.subtitle}>Share your eco-wins with classmates and inspire change together.</p>
       </div>
+
 
       {/* Post composer */}
       <div className={styles.composer}>

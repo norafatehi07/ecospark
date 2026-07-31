@@ -145,10 +145,6 @@ export default function FrameStudio({
 
   const rotateY = useTransform(sx, [-1, 1], [-11, 11]);
   const rotateX = useTransform(sy, [-1, 1], [9, -9]);
-  const ghostX = useTransform(sx, [-1, 1], [-7, 7]);
-  const ghostY = useTransform(sy, [-1, 1], [-5, 5]);
-  const ghostXNeg = useTransform(sx, [-1, 1], [7, -7]);
-  const ghostYNeg = useTransform(sy, [-1, 1], [5, -5]);
   const flareLeft = useTransform(sx, [-1, 1], ['8%', '92%']);
   const flareTop = useTransform(sy, [-1, 1], ['8%', '92%']);
 
@@ -183,7 +179,10 @@ export default function FrameStudio({
         className={styles.stage}
         onMouseMove={handleMove}
         onMouseLeave={handleLeave}
-        style={{ '--tier-color': cfg.color }}
+        style={{ 
+          '--tier-color': cfg.color,
+          minHeight: previewId === 'frame-prime' ? '560px' : undefined
+        }}
       >
         {!reducedMotion && <StudioBackdrop mouseRef={mouseRef} tint={cfg.color} />}
         <div className={styles.stageVignette} />
@@ -193,17 +192,7 @@ export default function FrameStudio({
 
         {/* Parallax avatar rig */}
         <motion.div className={styles.rig} style={{ rotateX, rotateY, transformPerspective: 900 }}>
-          {/* Chromatic aberration ghosts */}
-          {FrameComp && !reducedMotion && (
-            <>
-              <motion.div className={styles.ghost} style={{ x: ghostX, y: ghostY, filter: 'hue-rotate(-45deg) blur(1px)' }} aria-hidden>
-                <FrameComp />
-              </motion.div>
-              <motion.div className={styles.ghost} style={{ x: ghostXNeg, y: ghostYNeg, filter: 'hue-rotate(140deg) blur(1px)' }} aria-hidden>
-                <FrameComp />
-              </motion.div>
-            </>
-          )}
+
 
           {/* Avatar core */}
           <div className={styles.avatarCore} style={{ boxShadow: `0 0 60px ${cfg.color}44, inset 0 0 30px rgba(0,0,0,0.5)` }}>
@@ -268,7 +257,7 @@ export default function FrameStudio({
                   onClick={() => canAfford && onRedeem(preview)}
                 >
                   {canAfford
-                    ? `Redeem — ${preview.pointCost.toLocaleString()} pts`
+                    ? `Unlock — ${preview.pointCost.toLocaleString()} pts`
                     : `🔒 ${preview.pointCost.toLocaleString()} pts`}
                 </button>
               )}
@@ -291,7 +280,6 @@ export default function FrameStudio({
                 key={f.id}
                 className={`${styles.railItem} ${active ? styles.railActive : ''}`}
                 onClick={() => setPreviewId(f.id)}
-                whileHover={{ scale: 1.06 }}
                 whileTap={{ scale: 0.95 }}
                 style={{ '--tier-color': fCfg.color, borderColor: active ? fCfg.color : undefined, boxShadow: active ? fCfg.glow : undefined }}
                 title={f.name}

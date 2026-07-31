@@ -7,7 +7,6 @@ import { useUiStore } from '../store/uiStore';
 import { subscribeUserNotifications } from '../services/firestoreService';
 import NewsBoard from '../components/news/NewsBoard';
 import EcoHeroStatic from '../components/hero/EcoHeroStatic';
-import PremiumIcon from '../components/common/PremiumIcon';
 import { Camera, Trophy, Gift, Globe, Bell, Zap, Flame, CheckSquare, Leaf, Sparkles } from 'lucide-react';
 import styles from './Home.module.css';
 
@@ -97,10 +96,10 @@ function StatCard({ icon, label, value, sublabel, color, to, current, goal }) {
 
 function QuickActions() {
   const actions = [
-    { icon: <PremiumIcon icon={Camera} color="emerald" size={24} />, label: 'Log Task', to: '/tasks', color: 'var(--color-primary)' },
-    { icon: <PremiumIcon icon={Trophy} color="gold" size={24} />, label: 'Leaderboard', to: '/leaderboard', color: 'var(--color-gold)' },
-    { icon: <PremiumIcon icon={Gift} color="ruby" size={24} />, label: 'Rewards', to: '/rewards', color: 'var(--color-secondary)' },
-    { icon: <PremiumIcon icon={Globe} color="sapphire" size={24} />, label: 'Community', to: '/community', color: '#7C3AED' },
+    { icon: <Camera size={24} color="var(--color-primary)" />, label: 'Log Task', to: '/tasks', color: 'var(--color-primary)' },
+    { icon: <Trophy size={24} color="var(--color-gold)" />, label: 'Leaderboard', to: '/leaderboard', color: 'var(--color-gold)' },
+    { icon: <Gift size={24} color="var(--color-error)" />, label: 'Rewards', to: '/rewards', color: 'var(--color-error)' },
+    { icon: <Globe size={24} color="var(--color-info)" />, label: 'Community', to: '/community', color: 'var(--color-info)' },
   ];
 
   return (
@@ -135,10 +134,10 @@ export default function Home() {
   const streakMsg = useMemo(() => {
     const s = profile?.streak || 0;
     if (s === 0) return 'Start your streak today!';
-    if (s === 1) return <span className="flex items-center gap-1">You've started! Keep going <PremiumIcon icon={Leaf} size={16} /></span>;
+    if (s === 1) return <span className="flex items-center gap-1">You've started! Keep going <Leaf size={16} /></span>;
     if (s < 7) return `${s} days strong!`;
-    if (s < 30) return <span className="flex items-center gap-1">{s} days — you're on fire! <PremiumIcon icon={Flame} color="ruby" size={16} /></span>;
-    return <span className="flex items-center gap-1">{s} days — legend! <PremiumIcon icon={Trophy} color="gold" size={16} /></span>;
+    if (s < 30) return <span className="flex items-center gap-1">{s} days — you're on fire! <Flame color="var(--color-error)" size={16} /></span>;
+    return <span className="flex items-center gap-1">{s} days — legend! <Trophy color="var(--color-gold)" size={16} /></span>;
   }, [profile?.streak]);
 
   const [unreadNotifs, setUnreadNotifs] = useState(0);
@@ -162,12 +161,12 @@ export default function Home() {
       >
         <div>
           <h1 className={styles.greeting}>
-            {greeting}, <span className={styles.name}>{profile?.displayName?.split(' ')[0] || 'EcoHero'}</span> <PremiumIcon icon={Sparkles} color="gold" size={24} />
+            {greeting}, <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}><span className={styles.name}>{profile?.displayName?.split(' ')[0] || 'EcoHero'}</span> <Sparkles color="var(--color-gold)" size={24} /></span>
           </h1>
           <div className={styles.subgreeting}>{streakMsg}</div>
         </div>
         <Link to="/notifications" className={styles.settingsBtn} aria-label="Notifications" style={{ position: 'relative' }}>
-          <PremiumIcon icon={Bell} color="gold" size={24} />
+          <Bell color="var(--color-text)" size={24} />
           {unreadNotifs > 0 && (
             <div style={{
               position: 'absolute', top: -2, right: -2,
@@ -194,15 +193,15 @@ export default function Home() {
           {/* 3D Hero (desktop only, spans 2 rows) */}
           <motion.div
             className={styles.heroCard}
-            initial={{ opacity: 0, scale: 0.97 }}
-            animate={{ opacity: 1, scale: 1 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             transition={{ delay: 0.15, duration: 0.5 }}
           >
             <HeroSection />
             <div className={styles.heroOverlay}>
               <p className={styles.heroLabel}>Your Eco Impact</p>
               <p className={styles.heroPoints} style={{display:'flex', alignItems:'center', gap:'0.5rem', justifyContent:'flex-start'}}>
-                <PremiumIcon icon={Zap} color="gold" size={20} /> <strong>{(profile?.lifetimePoints || profile?.points || 0).toLocaleString()}</strong> points earned
+                <Zap color="var(--color-gold)" size={20} /> <strong>{(profile?.lifetimePoints || profile?.points || 0).toLocaleString()}</strong> points earned
               </p>
             </div>
           </motion.div>
@@ -218,7 +217,7 @@ export default function Home() {
           {/* Stats row */}
           <div className={styles.statsArea}>
             <StatCard
-              icon={<PremiumIcon icon={Flame} color="ruby" size={24} />}
+              icon={<Flame color="var(--color-error)" size={24} />}
               label="Day Streak"
               value={profile?.streak || 0}
               sublabel={profile?.longestStreak ? `Longest: ${profile.longestStreak} days` : 'Start your streak today!'}
@@ -226,7 +225,7 @@ export default function Home() {
               to="/tasks"
             />
             <StatCard
-              icon={<PremiumIcon icon={Zap} color="gold" size={24} />}
+              icon={<Zap color="var(--color-gold)" size={24} />}
               label="Available Points"
               value={(profile?.spendableBalance ?? profile?.points ?? 0).toLocaleString()}
               sublabel={`This week: ${profile?.weeklyPoints || 0}`}
@@ -234,7 +233,7 @@ export default function Home() {
               to="/leaderboard"
             />
             <StatCard
-              icon={<PremiumIcon icon={CheckSquare} color="emerald" size={24} />}
+              icon={<CheckSquare color="var(--color-primary)" size={24} />}
               label="Tasks Done"
               value={profile?.totalTasksCompleted || 0}
               sublabel="Weekly Goal: 5 Tasks"
@@ -244,7 +243,7 @@ export default function Home() {
               goal={5}
             />
             <StatCard
-              icon={<PremiumIcon icon={Leaf} color="emerald" size={24} />}
+              icon={<Leaf color="var(--color-secondary)" size={24} />}
               label="CO₂ Saved"
               value={`${((profile?.totalCO2Saved || 0) / 1000).toFixed(1)}kg`}
               sublabel="Weekly Goal: 10kg"

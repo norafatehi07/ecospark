@@ -87,7 +87,6 @@
 }
 .caseIcon {
   font-size: 80px;
-  filter: drop-shadow(0 0 30px var(--case-color));
   animation: float 4s ease-in-out infinite;
 }
 @keyframes float {
@@ -250,6 +249,8 @@
   display: flex;
   align-items: center;
   height: 100%;
+  position: absolute;
+  left: 50%;
 }
 .scrollerItem {
   width: 180px;

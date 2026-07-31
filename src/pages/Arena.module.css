@@ -1,34 +1,54 @@
+/* Arena.module.css — Regal dark theme matching EcoSpark's premium aesthetic */
+
+/* ── Page shell ──────────────────────────────────────────────────────────── */
 .page {
   padding: 40px;
   max-width: 1400px;
   margin: 0 auto;
   min-height: 100vh;
   position: relative;
+  overflow: hidden;
 }
 
-/* Background ambient glow */
-.page::before {
-  content: '';
+.ambientBg {
   position: absolute;
-  top: 0; left: 20%; right: 20%; height: 500px;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%);
+  top: -100px; left: 50%; transform: translateX(-50%);
+  width: 900px; height: 700px;
+  background: radial-gradient(ellipse at top, rgba(139,92,246,0.12) 0%, rgba(16,185,129,0.05) 50%, transparent 80%);
   pointer-events: none;
   z-index: 0;
 }
 
+/* ── Header ──────────────────────────────────────────────────────────────── */
 .header {
   text-align: center;
-  margin-bottom: 50px;
+  margin-bottom: 56px;
   position: relative;
   z-index: 1;
 }
 
+.headerBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, rgba(139,92,246,0.15), rgba(16,185,129,0.1));
+  border: 1px solid rgba(139,92,246,0.3);
+  border-radius: 100px;
+  padding: 6px 18px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #a78bfa;
+  margin-bottom: 20px;
+}
+
 .title {
   font-family: var(--font-display);
-  font-size: 4rem;
+  font-size: clamp(2.5rem, 5vw, 4rem);
   font-weight: 900;
-  margin: 0 0 10px 0;
-  background: linear-gradient(135deg, #fff, #a78bfa);
+  margin: 0 0 12px 0;
+  background: linear-gradient(135deg, #fff 0%, #c4b5fd 50%, #86efac 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   display: flex;
@@ -36,398 +56,813 @@
   justify-content: center;
   gap: 16px;
   text-transform: uppercase;
-  letter-spacing: 2px;
-  filter: drop-shadow(0 0 20px rgba(139, 92, 246, 0.4));
+  letter-spacing: 3px;
+  filter: drop-shadow(0 0 40px rgba(139,92,246,0.3));
 }
 
 .subtitle {
   color: var(--color-text-secondary);
-  font-size: 1.2rem;
-  letter-spacing: 1px;
+  font-size: 1.1rem;
+  letter-spacing: 0.5px;
+  max-width: 500px;
+  margin: 0 auto 20px auto;
+  line-height: 1.6;
 }
 
+.balancePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 100px;
+  padding: 10px 24px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--color-text);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+
+/* ── Tabs ────────────────────────────────────────────────────────────────── */
 .tabs {
   display: flex;
   justify-content: center;
-  gap: 20px;
-  margin-bottom: 50px;
+  gap: 8px;
+  margin-bottom: 48px;
   flex-wrap: wrap;
   position: relative;
   z-index: 1;
 }
 
 .tab {
-  padding: 16px 40px;
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255,255,255,0.05);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 28px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
   border-radius: 100px;
   color: var(--color-text-secondary);
-  font-weight: 700;
-  font-size: 1.1rem;
+  font-weight: 600;
+  font-size: 0.95rem;
   cursor: pointer;
-  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transition: all 0.25s ease;
   position: relative;
-  overflow: hidden;
 }
-
 .tab:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255,255,255,0.07);
   color: var(--color-text);
-  border-color: rgba(255,255,255,0.2);
-  transform: translateY(-2px);
+  border-color: rgba(139,92,246,0.3);
+  transform: translateY(-1px);
 }
-
-.tab.active {
+.activeTab {
+  background: linear-gradient(135deg, rgba(139,92,246,0.25), rgba(16,185,129,0.15));
+  border-color: rgba(139,92,246,0.5);
   color: #fff;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
-  border-color: transparent;
-  box-shadow: 0 10px 30px rgba(139, 92, 246, 0.4), inset 0 2px 0 rgba(255,255,255,0.2);
+  box-shadow: 0 8px 24px rgba(139,92,246,0.2);
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-  gap: 30px;
+.tabContent {
   position: relative;
   z-index: 1;
 }
 
-.card {
-  background: rgba(255,255,255,0.02);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 24px;
-  padding: 30px;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  overflow: hidden;
-  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+/* ── Oracle cards ────────────────────────────────────────────────────────── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 28px;
 }
 
-.card::before {
+.oracleCard {
+  background: linear-gradient(160deg, rgba(25,25,40,0.95), rgba(12,12,20,0.98));
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 24px;
+  padding: 32px;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+}
+.oracleCard::before {
   content: '';
   position: absolute;
   top: 0; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  background: linear-gradient(90deg, transparent, rgba(139,92,246,0.5), transparent);
 }
-
-.card:hover {
-  transform: translateY(-8px) scale(1.02);
-  border-color: rgba(139, 92, 246, 0.4);
-  box-shadow: 0 20px 50px rgba(0,0,0,0.4), 0 0 20px rgba(139, 92, 246, 0.2);
+.oracleCard:hover {
+  transform: translateY(-6px);
+  border-color: rgba(139,92,246,0.3);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 30px rgba(139,92,246,0.1);
 }
-
-.cardTitle {
-  font-size: 1.4rem;
-  font-weight: 800;
-  color: var(--color-text);
-  margin: 0 0 12px 0;
-  line-height: 1.3;
+.oracleCardGlow {
+  position: absolute;
+  top: -60px; right: -60px;
+  width: 180px; height: 180px;
+  background: radial-gradient(circle, rgba(139,92,246,0.12), transparent 70%);
+  pointer-events: none;
 }
-
-.cardCategory {
-  font-size: 0.85rem;
+.oracleCategory {
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 3px;
   text-transform: uppercase;
-  letter-spacing: 2px;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+  background: linear-gradient(90deg, var(--color-primary), #10b981);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  margin-bottom: 20px;
-  font-weight: 900;
+  margin-bottom: 14px;
 }
-
-.cardDesc {
-  color: var(--color-text-secondary);
-  font-size: 1rem;
-  line-height: 1.6;
-  margin-bottom: 30px;
-  flex: 1;
-}
-
-.btn {
-  width: 100%;
-  padding: 16px;
-  border-radius: 12px;
+.oracleTitle {
+  font-size: 1.3rem;
   font-weight: 800;
-  font-size: 1.1rem;
-  cursor: pointer;
-  transition: all 0.3s ease;
+  color: var(--color-text);
+  margin: 0 0 10px 0;
+  line-height: 1.35;
+}
+.oracleDesc {
+  color: var(--color-text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+.oracleTimer {
   display: flex;
-  justify-content: center;
   align-items: center;
-  gap: 10px;
-  border: none;
-  text-transform: uppercase;
-  letter-spacing: 1px;
+  gap: 6px;
+  color: #a78bfa;
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 20px;
 }
-
-.btnPrimary {
-  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
-  color: #fff;
-  box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3), inset 0 2px 0 rgba(255,255,255,0.2);
-}
-.btnPrimary:hover:not(:disabled) {
-  transform: translateY(-3px);
-  box-shadow: 0 8px 25px rgba(139, 92, 246, 0.5), inset 0 2px 0 rgba(255,255,255,0.2);
-}
-.btnPrimary:disabled {
-  background: var(--color-border);
-  color: var(--color-text-tertiary);
-  box-shadow: none;
-  cursor: not-allowed;
-}
-
 .optionsGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  gap: 12px;
+  margin-bottom: 16px;
 }
-
 .optionBtn {
-  padding: 16px;
-  background: rgba(0,0,0,0.3);
-  border: 1px solid rgba(255,255,255,0.05);
-  border-radius: 12px;
-  color: var(--color-text);
-  font-weight: 800;
+  padding: 16px 12px;
+  background: rgba(0,0,0,0.35);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 14px;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all 0.25s ease;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  position: relative;
+  overflow: hidden;
 }
+.optionBtn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--opt-color, #8b5cf6);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.optionBtn:hover::before { opacity: 0.08; }
 .optionBtn:hover {
-  background: rgba(255,255,255,0.08);
-  border-color: rgba(255,255,255,0.2);
+  border-color: var(--opt-color, rgba(139,92,246,0.4));
   transform: translateY(-2px);
 }
+.optionLabel {
+  color: #fff;
+  font-weight: 800;
+  font-size: 1.05rem;
+  position: relative;
+}
+.optionMult {
+  color: var(--color-text-tertiary);
+  font-size: 0.8rem;
+  position: relative;
+}
+.stakeInput {
+  width: 100%;
+  padding: 14px 18px;
+  background: rgba(0,0,0,0.4);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  color: #fff;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+.stakeInput:focus {
+  border-color: rgba(139,92,246,0.5);
+}
+.stakeInput::placeholder { color: rgba(255,255,255,0.2); }
 
-/* Trivia Modal */
-.triviaModal {
+/* ── Trivia lobby ────────────────────────────────────────────────────────── */
+.triviaLobby {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 24px;
+  background: linear-gradient(160deg, rgba(20,20,35,0.95), rgba(10,10,20,0.98));
+  border: 1px solid rgba(59,130,246,0.2);
+  border-radius: 32px;
+  padding: 80px 40px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4), 0 0 60px rgba(59,130,246,0.05);
+}
+.triviaLobbyGlow {
+  position: absolute;
+  top: -100px; left: 50%; transform: translateX(-50%);
+  width: 400px; height: 300px;
+  background: radial-gradient(circle, rgba(59,130,246,0.15), transparent 70%);
+  pointer-events: none;
+}
+.triviaLobbyIcon { position: relative; z-index: 1; }
+.triviaLobbyTitle {
+  font-family: var(--font-display);
+  font-size: 3rem;
+  font-weight: 900;
+  margin: 0;
+  background: linear-gradient(135deg, #fff, #93c5fd);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 20px rgba(59,130,246,0.3));
+}
+.triviaLobbyDesc {
+  color: var(--color-text-secondary);
+  font-size: 1.1rem;
+  max-width: 560px;
+  line-height: 1.65;
+  margin: 0;
+}
+.triviaRules {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.triviaRule {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 100px;
+  padding: 8px 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+/* ── Spin Wheel ──────────────────────────────────────────────────────────── */
+.spinContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 40px;
+}
+.spinHeader { text-align: center; }
+.spinTitle {
+  font-family: var(--font-display);
+  font-size: 2.8rem;
+  font-weight: 900;
+  margin: 0 0 8px 0;
+  background: linear-gradient(135deg, #fff, #fcd34d);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 20px rgba(245,158,11,0.4));
+}
+.spinSubtitle {
+  color: var(--color-text-secondary);
+  font-size: 1.05rem;
+}
+.wheelScene {
+  position: relative;
+  width: 400px;
+  height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wheelRing {
+  position: absolute;
+  inset: -20px;
+  border-radius: 50%;
+  border: 3px solid rgba(139,92,246,0.2);
+  box-shadow: 0 0 60px rgba(139,92,246,0.1), inset 0 0 40px rgba(0,0,0,0.8);
+  transition: box-shadow 0.5s;
+}
+.wheelRingSpinning {
+  border-color: rgba(139,92,246,0.5);
+  box-shadow: 0 0 100px rgba(139,92,246,0.3), inset 0 0 60px rgba(0,0,0,0.8);
+  animation: ringPulse 0.5s ease-in-out infinite alternate;
+}
+@keyframes ringPulse {
+  from { box-shadow: 0 0 60px rgba(139,92,246,0.3); }
+  to   { box-shadow: 0 0 120px rgba(139,92,246,0.5); }
+}
+/* Pointer at the top */
+.wheelPointer {
+  position: absolute;
+  top: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  width: 40px;
+  height: 56px;
+  background: linear-gradient(180deg, #f87171, #991b1b);
+  clip-path: polygon(50% 100%, 5% 0%, 95% 0%);
+  filter: drop-shadow(0 8px 12px rgba(0,0,0,0.6));
+}
+.wheelPointerInner {
+  position: absolute;
+  bottom: 2px; left: 50%;
+  transform: translateX(-50%);
+  width: 12px; height: 12px;
+  background: #fff;
+  border-radius: 50%;
+}
+
+.spinResult {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 32px;
+  background: linear-gradient(135deg, rgba(var(--win-color), 0.15), rgba(var(--win-color), 0.05));
+  border: 1px solid var(--win-color, rgba(255,255,255,0.1));
+  border-radius: 100px;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #fff;
+}
+.spinResult strong { color: #fcd34d; }
+.spinBtn { min-width: 240px; }
+
+/* ── Staking ─────────────────────────────────────────────────────────────── */
+.stakingContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+.stakingHero {
+  background: linear-gradient(160deg, rgba(16,185,129,0.08), rgba(6,182,212,0.05));
+  border: 1px solid rgba(16,185,129,0.2);
+  border-radius: 32px;
+  padding: 60px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3), 0 0 40px rgba(16,185,129,0.05);
+}
+.stakingHeroGlow {
+  position: absolute;
+  top: -80px; left: 50%; transform: translateX(-50%);
+  width: 500px; height: 300px;
+  background: radial-gradient(circle, rgba(16,185,129,0.12), transparent 70%);
+  pointer-events: none;
+}
+.stakingTitle {
+  font-family: var(--font-display);
+  font-size: 2.5rem;
+  font-weight: 900;
+  margin: 20px 0 12px 0;
+  background: linear-gradient(135deg, #fff, #86efac);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.stakingDesc {
+  color: var(--color-text-secondary);
+  font-size: 1.05rem;
+  max-width: 520px;
+  line-height: 1.65;
+  margin-bottom: 32px;
+}
+.stakingStats {
+  display: flex;
+  gap: 0;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 20px;
+  overflow: hidden;
+  margin-bottom: 32px;
+}
+.stakingStat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 20px 32px;
+}
+.stakingStatNum {
+  font-size: 2rem;
+  font-weight: 900;
+  color: #10b981;
+  font-family: var(--font-display);
+}
+.stakingStatLabel {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+.stakingStatDivider {
+  width: 1px;
+  background: rgba(255,255,255,0.05);
+  align-self: stretch;
+  margin: 12px 0;
+}
+.stakeRow {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  max-width: 440px;
+}
+.stakingContainer .stakeInput {
+  flex: 1;
+}
+
+.stakesGrid {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 24px;
+  padding: 32px;
+}
+.stakesGridTitle {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #fff;
+  margin: 0 0 24px 0;
+}
+.stakeCard {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 16px;
+  padding: 20px 24px;
+  margin-bottom: 12px;
+  transition: border-color 0.2s;
+}
+.stakeCard:hover { border-color: rgba(16,185,129,0.2); }
+.stakeCardClaimed { opacity: 0.5; }
+.stakeCardLeft { display: flex; flex-direction: column; gap: 6px; }
+.stakeCardAmount {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: #fff;
+  font-size: 1rem;
+}
+.stakeCardYield { color: #10b981; font-weight: 600; font-size: 0.95rem; }
+.stakeCardYield span { font-weight: 800; }
+.stakeCardDate {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8rem;
+  color: var(--color-text-tertiary);
+}
+.claimedBadge {
+  display: flex; align-items: center; gap: 6px;
+  color: #10b981; font-weight: 700; font-size: 0.9rem;
+}
+.claimBtn {
+  padding: 10px 22px;
+  background: #10b981;
+  color: #fff;
+  border: none;
+  border-radius: 100px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.claimBtn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(16,185,129,0.3); }
+.lockedBtn {
+  padding: 10px 22px;
+  background: rgba(255,255,255,0.05);
+  color: var(--color-text-tertiary);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 100px;
+  font-weight: 600;
+  cursor: not-allowed;
+}
+
+/* ── History ─────────────────────────────────────────────────────────────── */
+.historyPanel {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 28px;
+  padding: 40px;
+}
+.historyHeader { margin-bottom: 32px; }
+.historyTitle {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 900;
+  color: #fff;
+  margin: 0 0 8px 0;
+}
+.historySubtitle { color: var(--color-text-secondary); margin: 0; }
+.betsList { display: flex; flex-direction: column; gap: 14px; }
+.betCard {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  background: rgba(0,0,0,0.35);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 16px;
+  padding: 20px 24px;
+  transition: border-color 0.2s;
+}
+.betWon  { border-color: rgba(16,185,129,0.2); }
+.betLost { border-color: rgba(239,68,68,0.2); }
+.betCardLeft { flex: 1; }
+.betTitle { font-size: 1.05rem; font-weight: 700; color: #fff; margin: 0 0 8px 0; }
+.betMeta { display: flex; flex-direction: column; gap: 3px; font-size: 0.88rem; color: var(--color-text-secondary); }
+.betReason { font-size: 0.82rem; color: var(--color-text-tertiary); margin-top: 6px; font-style: italic; }
+.betCardRight { flex-shrink: 0; }
+.pendingBadge {
+  padding: 6px 16px;
+  background: rgba(245,158,11,0.1);
+  color: #f59e0b;
+  border: 1px solid rgba(245,158,11,0.25);
+  border-radius: 100px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  display: block;
+  text-align: center;
+}
+.resolveBtn {
+  padding: 8px 18px;
+  background: rgba(139,92,246,0.15);
+  color: #a78bfa;
+  border: 1px solid rgba(139,92,246,0.3);
+  border-radius: 100px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+.resolveBtn:hover { background: rgba(139,92,246,0.25); }
+.wonBadge, .lostBadge {
+  padding: 8px 18px;
+  border-radius: 100px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+.wonBadge  { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
+.lostBadge { background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
+
+/* ── Shared Buttons ──────────────────────────────────────────────────────── */
+.primaryBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px 36px;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  font-weight: 800;
+  font-size: 1.05rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  box-shadow: 0 8px 24px rgba(139,92,246,0.3), inset 0 2px 0 rgba(255,255,255,0.15);
+  width: 100%;
+  max-width: 360px;
+}
+.primaryBtn:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 36px rgba(139,92,246,0.45), inset 0 2px 0 rgba(255,255,255,0.2);
+}
+.primaryBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btnSpinner {
+  width: 18px; height: 18px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Loading state ───────────────────────────────────────────────────────── */
+.loadingPanel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 80px 40px;
+  text-align: center;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.04);
+  border-radius: 28px;
+}
+.loadingPanel h3 { color: #fff; font-size: 1.5rem; margin: 0; }
+.loadingPanel p  { color: var(--color-text-secondary); margin: 0; }
+.loadingOrb {
+  width: 80px; height: 80px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #8b5cf6, #4c1d95);
+  animation: orbPulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 40px rgba(139,92,246,0.4);
+}
+@keyframes orbPulse {
+  0%, 100% { transform: scale(1);    box-shadow: 0 0 40px rgba(139,92,246,0.4); }
+  50%       { transform: scale(1.12); box-shadow: 0 0 70px rgba(139,92,246,0.7); }
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────────── */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 80px 20px;
+  color: var(--color-text-tertiary);
+  font-size: 1.1rem;
+  text-align: center;
+}
+
+/* ── Trivia modal ────────────────────────────────────────────────────────── */
+.triviaOverlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.85);
+  background: rgba(0,0,0,0.88);
   backdrop-filter: blur(20px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  padding: 20px;
 }
-
-.triviaBox {
-  background: linear-gradient(180deg, rgba(30,30,40,0.9), rgba(15,15,20,0.95));
-  border: 1px solid rgba(139, 92, 246, 0.3);
+.triviaModal {
+  background: linear-gradient(180deg, rgba(22,22,36,0.98), rgba(10,10,20,0.99));
+  border: 1px solid rgba(139,92,246,0.25);
   border-radius: 32px;
-  padding: 50px;
+  padding: 48px;
   width: 100%;
-  max-width: 700px;
-  text-align: center;
-  box-shadow: 0 20px 80px rgba(139, 92, 246, 0.2), inset 0 2px 0 rgba(255,255,255,0.1);
+  max-width: 720px;
+  position: relative;
+  box-shadow: 0 30px 100px rgba(0,0,0,0.7), 0 0 60px rgba(139,92,246,0.1);
+  overflow: hidden;
 }
-
+.triviaModal::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(139,92,246,0.6), rgba(16,185,129,0.3), transparent);
+}
+.triviaProgress {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: rgba(255,255,255,0.05);
+}
+.triviaProgressBar {
+  height: 100%;
+  background: linear-gradient(90deg, #8b5cf6, #10b981);
+  transition: width 0.4s ease;
+}
+.triviaHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+.triviaQCount {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+.triviaScoreDisp {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #f59e0b;
+  margin-left: auto;
+}
+.triviaTopic {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: #10b981;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
 .triviaQuestion {
-  font-size: 2rem;
-  color: #fff;
-  margin-bottom: 40px;
-  font-family: var(--font-display);
+  font-size: 1.6rem;
   font-weight: 800;
-  line-height: 1.4;
-  text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  color: #fff;
+  margin-bottom: 32px;
+  line-height: 1.45;
+  font-family: var(--font-display);
 }
-
 .triviaOptions {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
-
 .triviaOptionBtn {
-  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
   background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
   color: var(--color-text);
-  font-size: 1.2rem;
-  font-weight: 600;
+  font-size: 1rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transition: all 0.2s ease;
+  text-align: left;
 }
-.triviaOptionBtn:hover {
-  background: rgba(139, 92, 246, 0.1);
-  border-color: var(--color-primary);
-  transform: translateX(10px);
-  box-shadow: -10px 0 20px rgba(139, 92, 246, 0.2);
+.triviaOptionBtn:hover:not(:disabled) {
+  background: rgba(139,92,246,0.08);
+  border-color: rgba(139,92,246,0.35);
+  transform: translateX(6px);
+}
+.triviaOptionBtn:disabled { cursor: default; }
+.optionCorrect {
+  background: rgba(16,185,129,0.15) !important;
+  border-color: rgba(16,185,129,0.5) !important;
+  color: #34d399 !important;
+}
+.optionWrong {
+  background: rgba(239,68,68,0.1) !important;
+  border-color: rgba(239,68,68,0.4) !important;
+  color: #f87171 !important;
+}
+.optionLetter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(139,92,246,0.15);
+  border: 1px solid rgba(139,92,246,0.2);
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #a78bfa;
+  flex-shrink: 0;
+}
+.ecoFact {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: rgba(16,185,129,0.08);
+  border: 1px solid rgba(16,185,129,0.2);
+  border-radius: 14px;
+  padding: 14px 18px;
+  margin-top: 20px;
+  font-size: 0.9rem;
+  color: #6ee7b7;
+  line-height: 1.5;
 }
 
-/* 3D Spin Wheel */
-.wheelContainer {
+/* Trivia finished */
+.triviaFinished {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 60px;
-  margin-top: 20px;
-  position: relative;
-  z-index: 1;
+  gap: 16px;
+  text-align: center;
+  padding: 20px 0;
 }
-
-/* The outer metallic frame */
-.wheelOuterFrame {
-  position: relative;
-  width: 450px;
-  height: 450px;
-  border-radius: 50%;
-  background: linear-gradient(145deg, #2a2a35, #1a1a25);
-  padding: 20px;
-  box-shadow: 
-    0 30px 60px rgba(0,0,0,0.6),
-    inset 0 4px 10px rgba(255,255,255,0.1),
-    inset 0 -4px 10px rgba(0,0,0,0.5),
-    0 0 50px rgba(139, 92, 246, 0.2);
-  border: 2px solid rgba(255,255,255,0.05);
-}
-
-/* The actual spinning wheel */
-.wheelWrapper {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  overflow: hidden;
-  box-shadow: 
-    inset 0 0 20px rgba(0,0,0,0.8),
-    0 0 15px rgba(0,0,0,0.5);
-  border: 4px solid #111;
-}
-
-.wheel {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  /* High-end gradient slices */
-  background: repeating-conic-gradient(
-    from 0deg,
-    #1e1e28 0deg 30deg,
-    #2a2a35 30deg 60deg
-  );
-  position: relative;
-  transition: transform cubic-bezier(0.05, 0.95, 0.1, 1);
-}
-
-/* Add colored segments on top with mix-blend-mode or absolute positioning */
-.wheelSegment {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  clip-path: polygon(50% 50%, 50% 0%, 100% 0%, 100% 100%, 50% 50%); /* handled by JS logic but CSS conic is easier */
-}
-
-/* Actually, a beautiful CSS conic-gradient with metallic lines separating slices */
-.wheel {
-  background: conic-gradient(
-    #3b82f6 0deg 45deg,
-    #10b981 45deg 90deg,
-    #f59e0b 90deg 135deg,
-    #ef4444 135deg 180deg,
-    #8b5cf6 180deg 225deg,
-    #ec4899 225deg 270deg,
-    #06b6d4 270deg 315deg,
-    #14b8a6 315deg 360deg
-  );
-  /* The lines separating segments */
-  mask-image: radial-gradient(white, black);
-  -webkit-mask-image: -webkit-radial-gradient(white, black);
-}
-
-/* Lines separating slices using a pseudo element overlay */
-.wheelOverlayLines {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: repeating-conic-gradient(
-    transparent 0deg,
-    transparent 44.5deg,
-    rgba(255,255,255,0.4) 44.5deg,
-    rgba(255,255,255,0.4) 45deg
-  );
-  pointer-events: none;
-}
-
-/* The text values on the wheel */
-.wheelValues {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  pointer-events: none;
-}
-.wheelValue {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 50%;
-  height: 20px;
-  transform-origin: left center;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 30px;
-  font-size: 1.2rem;
+.triviaFinished h2 {
+  font-size: 2.2rem;
   font-weight: 900;
-  color: white;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+  color: #fff;
+  margin: 0;
   font-family: var(--font-display);
 }
-
-/* Center metallic peg */
-.wheelCenter {
-  position: absolute;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  width: 80px; height: 80px;
-  background: radial-gradient(circle at 30% 30%, #444, #111);
-  border-radius: 50%;
-  z-index: 10;
-  box-shadow: 
-    0 10px 20px rgba(0,0,0,0.6),
-    inset 0 2px 5px rgba(255,255,255,0.2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.wheelCenterInner {
-  width: 40px; height: 40px;
-  background: radial-gradient(circle at 30% 30%, #8b5cf6, #4c1d95);
-  border-radius: 50%;
-  box-shadow: inset 0 2px 5px rgba(255,255,255,0.4);
-}
-
-/* The pointer / flapper at the top */
-.wheelPointerContainer {
-  position: absolute;
-  top: -30px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 20;
-  filter: drop-shadow(0 10px 10px rgba(0,0,0,0.5));
-}
-.wheelPointer {
-  width: 50px;
-  height: 70px;
-  background: linear-gradient(to bottom, #ef4444, #991b1b);
-  clip-path: polygon(50% 100%, 10% 0, 90% 0);
-  position: relative;
-  transform-origin: top center;
-  border-top-left-radius: 10px;
-  border-top-right-radius: 10px;
-}
-/* Flapper animation when spinning */
-@keyframes flapperTick {
-  0% { transform: rotate(0deg); }
-  50% { transform: rotate(-20deg); }
-  100% { transform: rotate(0deg); }
-}
-.flapperSpinning {
-  animation: flapperTick 0.1s infinite;
+.triviaScore {
+  font-size: 1.4rem;
+  color: var(--color-text-secondary);
+  margin: 0;
 }

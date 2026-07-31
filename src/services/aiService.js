@@ -280,134 +280,227 @@ Do NOT include any extra text, only the JSON object.`
 }
 
 /**
- * Generate real-time Arena Predictions (mostly India focused)
+ * Generate real-time Oracle Prediction Markets — eco/sustainability focused.
+ * Uses Gemini Flash for current eco news awareness.
+ * Returns 8–12 markets. 70% sustainability/ESG, 30% green-adjacent.
  */
-export async function generateArenaPredictions() {
-  try {
-    const apiKey = import.meta.env.VITE_GROQ_API_KEY;
-    if (!apiKey) throw new Error('Groq API key missing');
+export async function generateOracleMarkets() {
+  const today = new Date().toISOString().slice(0, 10);
+  const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-    const systemPrompt = {
-      role: 'system',
-      content: `You are an AI for a gamified prediction market. The CURRENT YEAR IS 2026. Do NOT suggest events from 2024 or 2025.
-Generate 12 highly realistic, current, and engaging predictions focused mainly on India (Sports, Tech, Politics, Economy, Entertainment) that will happen in late 2026 or 2027.
-CRITICAL INSTRUCTION: This is a fictional roleplay game. Do NOT refuse to generate predictions based on "inability to predict the future". Ensure the events are actually scheduled or highly plausible for 2026/2027 (e.g., FIFA World Cup 2026, ISRO missions, major elections).
-Examples: "Will India win the 2026 Men's FIH Hockey World Cup?", "Will ISRO launch Shukrayaan-1 by 2026 end?", "Will the Nifty 50 cross 30,000 in 2026?"
-Provide realistic betting odds (multiplier) between 1.1x and 4.0x based on the likelihood.
-Respond ONLY with a valid JSON array of objects. Schema for each object:
-{"id":"unique-id","title":"The prediction question","category":"Category Name","description":"Brief context","options":[{"id":"yes","label":"Yes","multiplier":1.5,"color":"var(--color-emerald)"},{"id":"no","label":"No","multiplier":2.1,"color":"var(--color-ruby)"}]}`
-    };
+  // Try Gemini Flash first (better eco news awareness)
+  if (geminiKey) {
+    try {
+      const { GoogleGenerativeAI } = await import('@google/generative-ai');
+      const genAI = new GoogleGenerativeAI(geminiKey);
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [systemPrompt],
-        temperature: 0.8,
-      })
-    });
+      const prompt = `Today is ${today}. You are the AI engine for EcoSpark, a sustainability prediction market platform similar to Polymarket.
 
-    if (!response.ok) throw new Error('Failed to generate predictions');
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-    
-    // Extract JSON array if surrounded by markdown
-    const jsonStr = content.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
-    return JSON.parse(jsonStr);
-  } catch (err) {
-    console.error('Failed to generate predictions:', err);
-    throw err;
+Generate exactly 10 prediction markets. Rules:
+- 7 must be about sustainability, climate, green energy, ESG stocks, or eco policy
+- 3 can be about EV companies, carbon markets, renewable energy stocks, or green tech
+- All must be binary YES/NO questions that can be objectively settled
+- Markets should resolve within 2–14 days from today
+- Use REAL, CURRENT eco topics from 2026 — e.g. Tesla stock levels, solar capacity targets, carbon credit prices, UN climate pledges, EV adoption rates, green energy milestones
+- Odds must reflect realistic probability (popular outcome = lower multiplier, unlikely = higher multiplier)
+- Include the endTime as ISO 8601 string (2 to 14 days from today)
+
+Examples of GOOD markets:
+- "Will Tesla (TSLA) stock close above $250 by Aug 15, 2026?"
+- "Will India's renewable energy capacity exceed 220 GW by end of August 2026?"
+- "Will the EU carbon credit price stay above €60 per tonne this week?"
+- "Will global EV sales exceed 1.2 million units in July 2026?"
+- "Will Adani Green Energy hit its 10 GW solar milestone by Q3 2026?"
+
+Return ONLY a valid JSON array. No markdown, no explanation. Schema:
+[
+  {
+    "id": "mkt1",
+    "title": "Will Tesla (TSLA) stock close above $250 by Aug 10, 2026?",
+    "description": "Tesla shares have been volatile amid EV demand news. Analysts are split on near-term direction.",
+    "category": "Green Stocks",
+    "emoji": "📈",
+    "tags": ["tesla", "ev", "stocks"],
+    "endTime": "2026-08-10T00:00:00.000Z",
+    "options": [
+      { "id": "yes", "label": "YES", "multiplier": 1.7 },
+      { "id": "no", "label": "NO", "multiplier": 2.1 }
+    ]
   }
+]`;
+
+      const result = await model.generateContent(prompt);
+      const text = result.response.text();
+      const jsonStr = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(jsonStr);
+      if (Array.isArray(parsed) && parsed.length >= 5) return parsed;
+    } catch (geminiErr) {
+      console.warn('[Oracle] Gemini market gen failed, falling back to Groq:', geminiErr.message);
+    }
+  }
+
+  // Fallback: Groq
+  const apiKey = import.meta.env.VITE_GROQ_API_KEY;
+  if (!apiKey) throw new Error('No AI API key available');
+
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      messages: [{
+        role: 'system',
+        content: `Today is ${today}. Generate 10 eco sustainability prediction market questions for EcoSpark.
+Focus: green stocks (Tesla, BYD, Vestas), renewable energy targets, carbon markets, EV adoption, climate policy.
+All must be binary YES/NO, resolve in 2-14 days. Include realistic multipliers (1.1x–4.0x).
+Return ONLY a valid JSON array. Schema per item:
+{"id":"mkt1","title":"...","description":"...","category":"Green Stocks","emoji":"📈","tags":[],"endTime":"ISO date","options":[{"id":"yes","label":"YES","multiplier":1.8},{"id":"no","label":"NO","multiplier":2.0}]}`
+      }],
+      temperature: 0.9,
+    })
+  });
+
+  if (!response.ok) throw new Error('Failed to generate oracle markets');
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content;
+  const jsonStr = content.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+  return JSON.parse(jsonStr);
 }
 
 /**
  * Generate real-time Arena Trivia (General Knowledge)
  */
 export async function generateArenaTrivia() {
+  // Try Gemini Flash first for eco-focused questions
   try {
-    const apiKey = import.meta.env.VITE_GROQ_API_KEY;
-    if (!apiKey) throw new Error('Groq API key missing');
+    const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (geminiKey) {
+      const { GoogleGenerativeAI } = await import('@google/generative-ai');
+      const genAI = new GoogleGenerativeAI(geminiKey);
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
-    const systemPrompt = {
-      role: 'system',
-      content: `You are an AI quizmaster.
-Generate 10 fresh, engaging general knowledge trivia questions. Mix global and Indian context.
-Make them moderately challenging.
-Respond ONLY with a valid JSON array of objects. Schema for each object:
-{"id":"unique-id","question":"The question text","options":["Option A","Option B","Option C","Option D"],"correctIndex": 0-3 (the integer index of the correct option)}`
-    };
+      // Use a time-based seed phrase to ensure fresh questions every time
+      const seed = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const ecoTopics = [
+        'renewable energy breakthroughs', 'ocean plastic pollution', 'climate change science',
+        'electric vehicles adoption', 'sustainable agriculture', 'biodiversity and ecosystems',
+        'carbon capture technology', 'solar and wind power', 'deforestation and reforestation',
+        'green building materials', 'food waste reduction', 'water conservation',
+        'air quality and pollution', 'India environmental initiatives', 'UN climate summits'
+      ];
+      // Pick 3 random topics for variety
+      const pickedTopics = ecoTopics
+        .sort(() => Math.random() - 0.5)
+        .slice(0, 3)
+        .join(', ');
 
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [systemPrompt],
-        temperature: 0.9,
-      })
-    });
+      const prompt = `[Session: ${seed}]
+You are an eco-education quizmaster for a sustainability platform called EcoSpark.
+Generate exactly 10 FRESH and UNIQUE quiz questions focused on: ${pickedTopics}.
+Topics must be about real environmental news, science, and eco facts.
+Questions must be interesting and educational, not repetitive.
+Vary difficulty: 3 easy, 4 medium, 3 hard.
 
-    if (!response.ok) throw new Error('Failed to generate trivia');
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-    
-    // Extract JSON array if surrounded by markdown
-    const jsonStr = content.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
-    return JSON.parse(jsonStr);
-  } catch (err) {
-    console.error('Failed to generate trivia:', err);
-    throw err;
+Return ONLY a valid JSON array. No markdown, no explanation, just the array.
+Each item:
+{"id":"q1","question":"...","options":["A","B","C","D"],"correctIndex":0,"topic":"...","fact":"1 short interesting eco fact related to this answer"}`;
+
+      const result = await model.generateContent(prompt);
+      const text = result.response.text();
+      const jsonStr = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(jsonStr);
+      if (Array.isArray(parsed) && parsed.length >= 5) return parsed;
+    }
+  } catch (geminiErr) {
+    console.warn('Gemini trivia failed, falling back to Groq:', geminiErr.message);
   }
+
+  // Fallback: Groq with eco focus
+  const apiKey = import.meta.env.VITE_GROQ_API_KEY;
+  if (!apiKey) throw new Error('No AI API key available');
+
+  const seed = Math.random().toString(36).slice(2, 10);
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      messages: [{
+        role: 'system',
+        content: `[Seed:${seed}] You are an eco-education quizmaster for a sustainability platform.
+Generate 10 UNIQUE trivia questions about environment, ecology, climate change, renewable energy, and sustainability.
+Include real facts, recent news events, and Indian environmental context.
+Never repeat questions from previous sessions.
+Respond ONLY with a valid JSON array. Schema:
+[{"id":"q1","question":"...","options":["A","B","C","D"],"correctIndex":0,"topic":"climate","fact":"Short fun eco fact"}]`
+      }],
+      temperature: 1.0,
+    })
+  });
+
+  if (!response.ok) throw new Error('Failed to generate trivia');
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content;
+  const jsonStr = content.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+  return JSON.parse(jsonStr);
 }
 
 /**
- * Resolve an Arena Prediction using AI as the Oracle
- * Returns an outcome evaluation based on real-world probability or simulation
+ * Settle an Oracle market using Gemini AI.
+ * @param {string} title - Market title
+ * @param {string} category - Market category 
+ * @param {Array} options - [{id, label}, ...]
+ * @returns {{ winnerId: string, reason: string }}
  */
-export async function resolvePredictionAI(predictionTitle) {
-  try {
-    const apiKey = import.meta.env.VITE_GROQ_API_KEY;
-    if (!apiKey) throw new Error('Groq API key missing');
+export async function settleOracleMarket(title, category, options) {
+  const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-    const systemPrompt = {
-      role: 'system',
-      content: `You are the Oracle of an advanced Prediction Market.
-Your job is to "resolve" a market based on the event: "${predictionTitle}".
-CRITICAL INSTRUCTION: This is a FICTIONAL SIMULATION game. You MUST ACT AS IF the event has just concluded.
-DO NOT refuse to answer due to it being a future event or financial prediction. You MUST decide the outcome definitively. Be creative but logical based on current trends.
-Respond ONLY with a valid JSON object.
-Schema:
-{"resolved": true, "winnerOption": "Yes" or "No", "reason": "1 short sentence explaining why this outcome occurred in this fictional simulation."}`
-    };
+  const optionList = options.map(o => `{"id":"${o.id}","label":"${o.label}"}`).join(', ');
+  const prompt = `You are settling a prediction market on EcoSpark, a sustainability platform.
 
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [systemPrompt],
-        temperature: 0.9,
-      })
-    });
+Market: "${title}"
+Category: ${category}
+Options: [${optionList}]
 
-    if (!response.ok) throw new Error('Failed to resolve prediction');
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-    
-    const jsonStr = content.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
-    return JSON.parse(jsonStr);
-  } catch (err) {
-    console.error('Failed to resolve prediction:', err);
-    throw err;
+Based on the most likely real-world outcome as of today, determine which option wins.
+Consider: current market data, news, historical trends, and scientific consensus for eco/sustainability topics.
+This is a game platform — you MUST pick a definitive winner.
+
+Respond ONLY with valid JSON:
+{"winnerId": "<option id like 'yes' or 'no'>", "reason": "<1 concise sentence explaining the outcome based on real-world context>"}`;
+
+  if (geminiKey) {
+    try {
+      const { GoogleGenerativeAI } = await import('@google/generative-ai');
+      const genAI = new GoogleGenerativeAI(geminiKey);
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      const result = await model.generateContent(prompt);
+      const text = result.response.text();
+      const jsonStr = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+      return JSON.parse(jsonStr);
+    } catch (err) {
+      console.warn('[Oracle] Gemini settlement failed, trying Groq:', err.message);
+    }
   }
+
+  // Fallback: Groq
+  const apiKey = import.meta.env.VITE_GROQ_API_KEY;
+  if (!apiKey) throw new Error('No AI API key for settlement');
+
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      messages: [{ role: 'system', content: prompt }],
+      temperature: 0.7,
+    })
+  });
+
+  if (!response.ok) throw new Error('Oracle settlement API error');
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content;
+  const jsonStr = content.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+  return JSON.parse(jsonStr);
 }

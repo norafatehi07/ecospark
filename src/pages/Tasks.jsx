@@ -368,7 +368,7 @@ export default function Tasks() {
                   }
                 );
               } else {
-                toast.success('Task logged! A new task has been unlocked from the global pool.');
+                toast.success('Task logged! A new task is generated from the global task pool!');
                 setSelectedTask(null);
               }
             }}

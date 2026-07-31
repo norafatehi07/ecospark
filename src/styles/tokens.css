@@ -32,8 +32,8 @@
   /* ------------------------------------------
      TYPOGRAPHY
   ------------------------------------------ */
-  --font-display: 'Manrope', system-ui, sans-serif;
-  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Fraunces', 'Georgia', serif;
+  --font-body: 'Manrope', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
   /* Ceremonial serif — landing hero, tier-reveal item names, Celestial titles.
      Deliberately NOT used for UI chrome, tables, or body copy. */
@@ -459,6 +459,19 @@
   --color-streak-glow: rgba(255, 140, 90, 0.4);
 }
 
+[data-theme="regalia"][data-theme-contrast="gold"] {
+  --glass-border: 1.5px solid rgba(245, 158, 11, 0.4);
+  --color-border: rgba(245, 158, 11, 0.25);
+  --color-border-strong: rgba(245, 158, 11, 0.5);
+
+  --elevation-1: 0 0 0 1.5px rgba(245, 158, 11, 0.25);
+  --elevation-2: 0 0 0 1.5px rgba(245, 158, 11, 0.35), 0 4px 14px rgba(0, 0, 0, 0.65);
+  --elevation-3: 0 0 0 1.5px rgba(245, 158, 11, 0.45), 0 10px 28px rgba(0, 0, 0, 0.80);
+  --elevation-4: 0 0 0 1.5px rgba(245, 158, 11, 0.6), 0 20px 48px rgba(0, 0, 0, 0.90);
+
+  --glow-gold: 0 0 24px rgba(245, 158, 11, 0.6), 0 0 12px rgba(245, 158, 11, 0.4);
+}
+
 /* ------------------------------------------
    DARK METALLIC THEME
 ------------------------------------------ */
@@ -502,4 +515,106 @@
   --elevation-1: 0 4px 24px rgba(0, 0, 0, 0.5);
   --elevation-2: 0 8px 32px rgba(0, 0, 0, 0.7);
   --elevation-3: 0 16px 48px rgba(0, 0, 0, 0.8);
+}
+/* ------------------------------------------
+   REGALIA THEMES
+------------------------------------------ */
+[data-theme="regalia-noir"] {
+  --bg-base: #080C0A;
+  --bg-card: linear-gradient(180deg, #141C18 0%, #0E1411 100%);
+  --bg-elevated: #141C18;
+  --bg-raised: #1B2620;
+  --bg-overlay: rgba(4, 7, 6, 0.82);
+  --bg-inset: #050807;
+
+  --gold-champagne: #E8C87A;
+  --gold: #C9A253;
+  --gold-deep: #8C6D33;
+  --gold-whisper: rgba(201, 162, 83, 0.10);
+  --oystersteel: #B9C4C0;
+  --oystersteel-dim: #7C8783;
+  --everose: #E0A48D;
+
+  --eco-canopy: #2FE38A;
+  --eco-leaf: #1FB56C;
+  --eco-moss: #0F7A47;
+  --eco-fern: #7FD8A8;
+  --eco-soil: #3E2F22;
+  --eco-bark: #26201A;
+  --water: #4FB8D8;
+  --sun: #F0B849;
+  --danger: #E5484D;
+  --danger-dim: #7A2226;
+
+  --color-warning: var(--sun);
+  --color-error: var(--danger);
+  --color-info: var(--water);
+  --color-text: #E8F5E9;
+  --color-text-secondary: #A5D6A7;
+  --color-text-tertiary: #81C784;
+  --color-text-inverse: #0A0F0A;
+  --color-streak: var(--sun);
+  --color-streak-glow: rgba(240, 184, 73, 0.4);
+
+  --color-bg: #080C0A;
+  --color-bg-card: #0E1411;
+  --color-bg-elevated: #141C18;
+  --color-surface: #141C18;
+  --color-surface-raised: #1B2620;
+  --color-border: rgba(201, 162, 83, 0.10);
+  --color-border-strong: rgba(201, 162, 83, 0.25);
+
+  --glass-bg: rgba(14, 20, 17, 0.78);
+  --glass-bg-strong: rgba(14, 20, 17, 0.92);
+  --glass-border: 1px solid var(--gold-whisper);
+  --glass-blur: blur(22px);
+  --glass-blur-sm: blur(12px);
+  --glow-primary: 0 0 24px rgba(47, 227, 138, 0.45), 0 0 8px rgba(47, 227, 138, 0.25);
+  --glow-gold: 0 0 24px rgba(201, 162, 83, 0.45), 0 0 8px rgba(201, 162, 83, 0.25);
+  --glow-celestial: 0 0 40px rgba(124, 58, 237, 0.55), 0 0 20px rgba(34, 211, 238, 0.40), 0 0 10px rgba(245, 158, 11, 0.50);
+}
+
+[data-theme="regalia-day"], [data-theme="regalia-light"] {
+  --bg-base: #F7F5F0;
+  --bg-card: #FFFFFF;
+  --bg-elevated: #FFFFFF;
+  --bg-raised: #EDEAE3;
+  --bg-overlay: rgba(247, 245, 240, 0.82);
+  --bg-inset: #E8E5DF;
+
+  --gold-champagne: #6F4800;
+  --gold: #725214;
+  --gold-deep: #5E4A24;
+  --gold-whisper: rgba(154, 122, 60, 0.15);
+  --oystersteel: #505F5A;
+  --oystersteel-dim: #7C8783;
+  --everose: #C07A5E;
+
+  --eco-canopy: #005518;
+  --eco-leaf: #14804D;
+  --eco-moss: #0B5232;
+  --eco-fern: #005124;
+  --eco-soil: #4F3C2C;
+  --eco-bark: #33261C;
+  --water: #00648A;
+  --sun: #813400;
+  --danger: #D32F2F;
+  --danger-dim: #FFCDD2;
+
+  --color-bg: #F7F5F0;
+  --color-bg-card: #FFFFFF;
+  --color-bg-elevated: #FFFFFF;
+  --color-surface: #F7F5F0;
+  --color-surface-raised: #EDEAE3;
+  --color-border: rgba(154, 122, 60, 0.15);
+  --color-border-strong: rgba(154, 122, 60, 0.30);
+
+  --color-text: #0D1210;
+  --color-text-secondary: #3F4A46;
+  --color-text-tertiary: #6B7570;
+  --color-text-inverse: #FFFFFF;
+
+  --glass-bg: rgba(247, 245, 240, 0.78);
+  --glass-bg-strong: rgba(247, 245, 240, 0.92);
+  --glass-border: 1px solid var(--gold-whisper);
 }

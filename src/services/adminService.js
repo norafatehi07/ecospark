@@ -349,3 +349,50 @@ export async function adminForceWeeklyReset() {
   
   return { success: true };
 }
+
+// ─── BULK OPERATIONS ─────────────────────────────────────────────────────────
+
+/** Delete ALL resolved (approved/rejected) submissions in one batch */
+export async function adminClearAllPastSubmissions() {
+  const q = query(collection(db, 'submissions'), where('status', 'in', ['approved', 'rejected']));
+  const snap = await getDocs(q);
+  if (snap.empty) return { deleted: 0 };
+
+  const docs = snap.docs;
+  let deleted = 0;
+  // Delete in chunks of 400 (safe below Firestore 500 op limit)
+  for (let i = 0; i < docs.length; i += 400) {
+    const chunk = docs.slice(i, i + 400);
+    await Promise.all(chunk.map(d => deleteDoc(d.ref)));
+    deleted += chunk.length;
+  }
+  return { deleted };
+}
+
+/**
+ * Find duplicate tasks — groups tasks with near-identical normalized titles.
+ * Returns array of groups (each group = array of duplicate tasks).
+ */
+export async function adminGetDuplicateTasks() {
+  const snap = await getDocs(collection(db, 'tasks'));
+  const tasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  const normalize = (str) =>
+    (str || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+
+  const seen = {};
+  for (const task of tasks) {
+    const key = normalize(task.title);
+    if (!seen[key]) seen[key] = [];
+    seen[key].push(task);
+  }
+
+  return Object.values(seen).filter(group => group.length > 1);
+}
+
+/** Delete a specific list of task IDs */
+export async function adminDeleteTasksBulk(taskIds) {
+  await Promise.all(taskIds.map(id => deleteDoc(doc(db, 'tasks', id))));
+  return { deleted: taskIds.length };
+}
+

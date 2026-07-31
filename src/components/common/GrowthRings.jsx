@@ -163,4 +163,43 @@ export function AmbientRings({ className = '' }) {
   );
 }
 
+/**
+ * The motif at glyph scale — a fixed number of concentric rings, no animation,
+ * no tier lookup.
+ *
+ * <GrowthRings/> above takes a tier *key* into TIER_CONFIG and is sized for
+ * frames and badges. §4.C and §4.G need the same shape from a numeric ring count
+ * at 18–28px, inline with text, which is a different enough job that deriving it
+ * from the other would mean a tier key that means nothing to either caller.
+ */
+export function RingGlyph({ count = 1, size = 28, color = 'currentColor', className = '', style }) {
+  const rings = Math.max(1, Math.min(6, Math.round(count)));
+  // Outermost first, so adding a ring grows inward and the silhouette is stable.
+  const step = 4.5 / rings + 1.7;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 28 28"
+      fill="none"
+      className={className}
+      style={{ flexShrink: 0, display: 'block', ...style }}
+      aria-hidden="true"
+    >
+      {Array.from({ length: rings }, (_, i) => (
+        <circle
+          key={i}
+          cx="14"
+          cy="14"
+          r={11 - i * step}
+          stroke={color}
+          strokeWidth={i === 0 ? 1.6 : 1.1}
+          // Inner rings fade inward, like older growth.
+          strokeOpacity={i === 0 ? 0.95 : Math.max(0.22, 0.72 - i * 0.12)}
+        />
+      ))}
+    </svg>
+  );
+}
+
 export default GrowthRings;

@@ -4,34 +4,72 @@ import { motion } from 'framer-motion';
 import { signOut } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
 import { useAuthStore } from '../../store/authStore';
+import { useUiStore } from '../../store/uiStore';
 import { subscribeConversations } from '../../services/firestoreService';
-import { useEffect, useState } from 'react';
-import { Home, CheckSquare, Trophy, Gift, Globe, MessageCircle, Info, ShieldAlert, Zap, LogOut, Flame } from 'lucide-react';
-import PremiumIcon from '../common/PremiumIcon';
+import { useEffect, useState, useRef } from 'react';
+import { Home, CheckSquare, Trophy, Gift, Globe, MessageCircle, Info, ShieldAlert, LogOut, Flame, Zap } from 'lucide-react';
 import Avatar from '../common/Avatar';
+import PointsReadout from './PointsReadout';
 import styles from './Sidebar.module.css';
 
-const NAV_ITEMS = [
-  { path: '/', icon: <PremiumIcon icon={Home} color="emerald" size={20} />, label: 'Home' },
-  { path: '/tasks', icon: <PremiumIcon icon={CheckSquare} color="sapphire" size={20} />, label: 'Tasks' },
-  { path: '/leaderboard', icon: <PremiumIcon icon={Trophy} color="gold" size={20} />, label: 'Leaderboard' },
-  { path: '/rewards', icon: <PremiumIcon icon={Gift} color="ruby" size={20} />, label: 'Rewards' },
-  { path: '/arena', icon: <PremiumIcon icon={Flame} color="ruby" size={20} />, label: 'Arena' },
-  { path: '/community', icon: <PremiumIcon icon={Globe} color="emerald" size={20} />, label: 'Community' },
-  { path: '/messages', icon: <PremiumIcon icon={MessageCircle} color="amethyst" size={20} />, label: 'Messages' },
-  { path: '/about', icon: <PremiumIcon icon={Info} color="slate" size={20} />, label: 'About' },
+const PRIMARY_NAV = [
+  { path: '/', icon: Home, label: 'Home', end: true },
+  { path: '/tasks', icon: CheckSquare, label: 'Tasks' },
+  { path: '/leaderboard', icon: Trophy, label: 'Leaderboard' },
+  { path: '/rewards', icon: Gift, label: 'Rewards' },
+  { path: '/arena', icon: Flame, label: 'Arena' },
+];
+
+const EXPLORE_NAV = [
+  { path: '/community', icon: Globe, label: 'Community' },
+  { path: '/messages', icon: MessageCircle, label: 'Messages' },
+];
+
+const MANAGE_NAV = [
+  { path: '/admin', icon: ShieldAlert, label: 'Admin', require: 'staff' },
+  { path: '/about', icon: Info, label: 'About' },
 ];
 
 import { useSettingsStore } from '../../store/settingsStore';
 
+function NavItem({ item, isActive, children, onClick }) {
+  return (
+    <NavLink
+      to={item.path}
+      end={item.end}
+      onClick={onClick}
+      className={({ isActive }) =>
+        `${styles.navItem} ${isActive ? styles.active : ''}`
+      }
+    >
+      {({ isActive }) => (
+        <>
+          <item.icon size={18} className={styles.navIcon} aria-hidden="true" style={{ color: 'var(--color-text-tertiary)' }} />
+          <span className={styles.navLabel}>{item.label}</span>
+          {children}
+          {isActive && (
+            <motion.div
+              layoutId="activeNavIndicator"
+              className={styles.activeIndicator}
+              transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+            />
+          )}
+        </>
+      )}
+    </NavLink>
+  );
+}
+
 export default function Sidebar() {
-  const { user, profile } = useAuthStore();
+  const { profile } = useAuthStore();
+  const { unreadCount } = useUiStore();
   const settings = useSettingsStore(s => s.settings) || {};
   const arenaEnabled = settings.arenaEnabled ?? true;
   const navigate = useNavigate();
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const accountRef = useRef(null);
 
-  const visibleNavItems = NAV_ITEMS.filter(item => item.path !== '/arena' || arenaEnabled);
+  const visiblePrimary = PRIMARY_NAV.filter(item => item.path !== '/arena' || arenaEnabled);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -50,6 +88,12 @@ export default function Sidebar() {
     navigate('/auth');
   };
 
+  const isStaff = profile?.role === 'teacher' || profile?.role === 'admin';
+  const visibleManage = MANAGE_NAV.filter(item => {
+    if (item.require === 'staff') return isStaff;
+    return true;
+  });
+
   return (
     <aside className={styles.sidebar}>
       {/* Logo */}
@@ -60,75 +104,53 @@ export default function Sidebar() {
 
       {/* Nav Links */}
       <nav className={styles.nav}>
-        <div className={styles.navInner}>
-          {visibleNavItems.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              end={item.path === '/'}
-              className={({ isActive }) =>
-                `${styles.navItem} ${isActive ? styles.active : ''}`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <div style={{ position: 'relative' }}>
-                    <span className={styles.navIcon}>{item.icon}</span>
-                    {item.path === '/messages' && unreadCount > 0 && (
-                      <div style={{
-                        position: 'absolute', top: -4, right: -4,
-                        background: '#EF4444', color: '#FFF', fontSize: '10px',
-                        fontWeight: 'bold', width: '18px', height: '18px',
-                        borderRadius: '50%', display: 'flex', alignItems: 'center',
-                        justifyContent: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                      }}>
-                        {unreadCount > 9 ? '9+' : unreadCount}
-                      </div>
-                    )}
-                  </div>
-                  <span className={styles.navLabel}>{item.label}</span>
-                  {isActive && (
-                    <motion.div
-                      layoutId="activeNavIndicator"
-                      className={styles.activeIndicator}
-                      transition={{ type: 'spring', stiffness: 500, damping: 40 }}
-                    />
-                  )}
-                </>
+          <div className={styles.navInner}>
+            {visiblePrimary.map((item) => (
+              <NavItem key={item.path} item={item} />
+            ))}
+            
+            {EXPLORE_NAV.map((item) => (
+              <NavItem key={item.path} item={item}>
+              {item.path === '/messages' && unreadCount > 0 && (
+                <div style={{
+                  position: 'absolute', right: 12,
+                  background: 'var(--color-error)', color: '#FFF', fontSize: '10px',
+                  fontWeight: 'bold', padding: '2px 6px',
+                  borderRadius: '99px', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </div>
               )}
-            </NavLink>
-          ))}
+            </NavItem>
+            ))}
 
-          {(profile?.role === 'teacher' || profile?.role === 'admin') && (
-            <NavLink
-              to="/admin"
-              className={({ isActive }) =>
-                `${styles.navItem} ${isActive ? styles.active : ''}`
-              }
-            >
-              <span className={styles.navIcon}><PremiumIcon icon={ShieldAlert} color="ruby" size={20} /></span>
-              <span className={styles.navLabel}>Admin</span>
-            </NavLink>
-          )}
-        </div>
-      </nav>
+            {visibleManage.length > 0 && (
+              <>
+                <div className={styles.hairline} style={{ margin: '0 12px 12px 12px' }} />
+                {visibleManage.map((item) => (
+                  <NavItem key={item.path} item={item} />
+                ))}
+              </>
+            )}
+          </div>
+        </nav>
 
-      {/* User mini card */}
+        <div className={styles.readoutWrap}>
+        <PointsReadout />
+      </div>
+
       <div className={styles.userCard}>
         <NavLink to="/profile" className={styles.userLink}>
           <div className={styles.userAvatar}>
-            <Avatar src={profile?.photoURL} activeFrame={profile?.activeFrame} size={40} alt={profile?.displayName} />
+            <Avatar src={profile?.photoURL} activeFrame={profile?.activeFrame} size={36} alt={profile?.displayName} />
           </div>
           <div className={styles.userInfo}>
             <p className={styles.userName}>{profile?.displayName || 'EcoUser'}</p>
-            <p className={styles.userPoints}>
-              <PremiumIcon icon={Zap} color="gold" size={14} className="mr-1" />
-              {profile?.spendableBalance ?? profile?.points ?? 0} pts
-            </p>
           </div>
         </NavLink>
         <button onClick={handleLogout} className={styles.logoutBtn} title="Sign out">
-          <PremiumIcon icon={LogOut} color="slate" size={18} />
+          <LogOut size={18} style={{ color: 'var(--color-text-tertiary)' }} />
         </button>
       </div>
     </aside>

@@ -1,59 +1,67 @@
-// src/constants/arenaData.js
-
+// Eco-sustainability fallback markets (used if AI generation fails)
 export const MOCK_PREDICTIONS = [
   {
-    id: 'pred-1',
-    title: 'Will India win the upcoming ICC Cricket World Cup?',
-    category: 'Sports',
-    description: 'Predict whether the Indian Cricket Team will lift the trophy in the upcoming World Cup tournament.',
-    endTime: new Date(Date.now() + 86400000 * 7).toISOString(), // 7 days from now
-    options: [
-      { id: 'yes', label: 'Yes', multiplier: 1.5, color: 'var(--color-emerald)' },
-      { id: 'no', label: 'No', multiplier: 2.2, color: 'var(--color-ruby)' }
-    ],
-    totalStaked: 125000,
-    status: 'active'
-  },
-  {
-    id: 'pred-2',
-    title: 'Will India\'s GDP growth rate exceed 7.5% this fiscal year?',
-    category: 'Economy',
-    description: 'Predict the economic growth trajectory of India for the current fiscal year.',
-    endTime: new Date(Date.now() + 86400000 * 3).toISOString(), // 3 days from now
-    options: [
-      { id: 'yes', label: 'Yes (> 7.5%)', multiplier: 1.8, color: 'var(--color-emerald)' },
-      { id: 'no', label: 'No (<= 7.5%)', multiplier: 1.9, color: 'var(--color-ruby)' }
-    ],
-    totalStaked: 85000,
-    status: 'active'
-  },
-  {
-    id: 'pred-3',
-    title: 'Will ISRO successfully launch the next Gaganyaan mission this year?',
-    category: 'Science',
-    description: 'Predict the success of the Indian Space Research Organisation\'s upcoming manned space mission timeline.',
-    endTime: new Date(Date.now() + 86400000 * 14).toISOString(), // 14 days from now
-    options: [
-      { id: 'yes', label: 'Yes', multiplier: 1.2, color: 'var(--color-emerald)' },
-      { id: 'no', label: 'No/Delayed', multiplier: 3.5, color: 'var(--color-ruby)' }
-    ],
-    totalStaked: 210000,
-    status: 'active'
-  },
-  {
-    id: 'pred-4',
-    title: 'Will a new major AI bill be passed in the Indian Parliament this session?',
-    category: 'Politics/Tech',
-    description: 'Predict if new significant regulations regarding Artificial Intelligence will be enacted soon.',
+    id: 'eco-1',
+    title: 'Will Tesla (TSLA) stock close above $230 this week?',
+    category: 'Green Stocks',
+    emoji: '📈',
+    description: 'Tesla shares are highly sensitive to EV demand signals and Elon Musk news. Will they hold above $230?',
     endTime: new Date(Date.now() + 86400000 * 5).toISOString(),
     options: [
-      { id: 'yes', label: 'Yes', multiplier: 2.5, color: 'var(--color-emerald)' },
-      { id: 'no', label: 'No', multiplier: 1.4, color: 'var(--color-ruby)' }
+      { id: 'yes', label: 'YES', totalStaked: 0, initialMultiplier: 1.7, multiplier: 1.7 },
+      { id: 'no', label: 'NO', totalStaked: 0, initialMultiplier: 2.1, multiplier: 2.1 },
     ],
-    totalStaked: 45000,
-    status: 'active'
-  }
+    totalStaked: 0, betCount: 0, status: 'active',
+    generatedDate: new Date().toISOString().slice(0, 10),
+    source: 'fallback',
+  },
+  {
+    id: 'eco-2',
+    title: 'Will India install 10 GW of new solar capacity in Q3 2026?',
+    category: 'Renewable Energy',
+    emoji: '☀️',
+    description: 'India has aggressive solar targets. Q3 data will reveal if the country stays on track for 500 GW by 2030.',
+    endTime: new Date(Date.now() + 86400000 * 10).toISOString(),
+    options: [
+      { id: 'yes', label: 'YES', totalStaked: 0, initialMultiplier: 1.6, multiplier: 1.6 },
+      { id: 'no', label: 'NO', totalStaked: 0, initialMultiplier: 2.4, multiplier: 2.4 },
+    ],
+    totalStaked: 0, betCount: 0, status: 'active',
+    generatedDate: new Date().toISOString().slice(0, 10),
+    source: 'fallback',
+  },
+  {
+    id: 'eco-3',
+    title: 'Will EU carbon credit prices stay above €55 per tonne this week?',
+    category: 'Carbon Markets',
+    emoji: '🌍',
+    description: 'European carbon allowances (EUAs) are a bellwether for climate policy confidence.',
+    endTime: new Date(Date.now() + 86400000 * 3).toISOString(),
+    options: [
+      { id: 'yes', label: 'YES', totalStaked: 0, initialMultiplier: 1.5, multiplier: 1.5 },
+      { id: 'no', label: 'NO', totalStaked: 0, initialMultiplier: 2.3, multiplier: 2.3 },
+    ],
+    totalStaked: 0, betCount: 0, status: 'active',
+    generatedDate: new Date().toISOString().slice(0, 10),
+    source: 'fallback',
+  },
+  {
+    id: 'eco-4',
+    title: 'Will global EV sales exceed 1 million units in August 2026?',
+    category: 'Electric Vehicles',
+    emoji: '⚡',
+    description: 'Monthly EV sales figures from BloombergNEF track the electrification transition worldwide.',
+    endTime: new Date(Date.now() + 86400000 * 14).toISOString(),
+    options: [
+      { id: 'yes', label: 'YES', totalStaked: 0, initialMultiplier: 1.4, multiplier: 1.4 },
+      { id: 'no', label: 'NO', totalStaked: 0, initialMultiplier: 2.9, multiplier: 2.9 },
+    ],
+    totalStaked: 0, betCount: 0, status: 'active',
+    generatedDate: new Date().toISOString().slice(0, 10),
+    source: 'fallback',
+  },
 ];
+
 
 export const MOCK_TRIVIA = [
   {

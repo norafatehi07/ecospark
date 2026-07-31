@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { useAuthStore } from '../store/authStore';
 import { getFlaggedSubmissions, updateSubmissionStatus, resolveReport, getTasks, getRewards, createNotification, createOrGetChat } from '../services/firestoreService';
 import { adminReviewSubmission } from '../services/economyService';
-import { getAdminUsers, adminUpdateUserPoints, adminUpdateUserProfile, adminAwardFrame, adminBanUser, adminDeletePost, getReportedPosts, getAdminStats, getAdminChartData, getResolvedSubmissions, adminDeleteSubmission, adminCreateTask, adminUpdateTask, adminDeleteTask, adminCreateReward, adminUpdateReward, adminDeleteReward, getGlobalSettings, updateGlobalSettings, getFrameRequests, resolveFrameRequest, adminForceWeeklyReset } from '../services/adminService';
+import { getAdminUsers, adminUpdateUserPoints, adminUpdateUserProfile, adminAwardFrame, adminBanUser, adminDeletePost, getReportedPosts, getAdminStats, getAdminChartData, getResolvedSubmissions, adminDeleteSubmission, adminCreateTask, adminUpdateTask, adminDeleteTask, adminCreateReward, adminUpdateReward, adminDeleteReward, getGlobalSettings, updateGlobalSettings, getFrameRequests, resolveFrameRequest, adminForceWeeklyReset, adminClearAllPastSubmissions, adminGetDuplicateTasks, adminDeleteTasksBulk } from '../services/adminService';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { Navigate, useNavigate } from 'react-router-dom';
@@ -51,6 +51,9 @@ export default function Admin() {
   const [directAward, setDirectAward] = useState({ userId: '', frameId: 'frame-prime' });
   const [taskModal, setTaskModal] = useState({ open: false, task: null });
   const [rewardModal, setRewardModal] = useState({ open: false, reward: null });
+  const [duplicateGroups, setDuplicateGroups] = useState(null); // null=not scanned, []=no dupes, [...]= groups
+  const [scanningDupes, setScanningDupes] = useState(false);
+  const [clearingAll, setClearingAll] = useState(false);
 
   const [openDropdownId, setOpenDropdownId] = useState(null);
 
@@ -140,6 +143,63 @@ export default function Admin() {
       setPastSubmissions(prev => prev.filter(s => s.id !== subId));
     } catch (err) {
       toast.error(err.message || 'Failed to delete submission');
+    }
+  };
+
+  const handleClearAllPastSubmissions = async () => {
+    if (!window.confirm(`Are you SURE you want to permanently delete ALL ${pastSubmissions.length} past submissions? This cannot be undone.`)) return;
+    setClearingAll(true);
+    try {
+      const result = await adminClearAllPastSubmissions();
+      toast.success(`Cleared ${result.deleted} submissions!`);
+      setPastSubmissions([]);
+    } catch (err) {
+      toast.error(err.message || 'Failed to clear submissions');
+    } finally {
+      setClearingAll(false);
+    }
+  };
+
+  const handleScanDuplicates = async () => {
+    setScanningDupes(true);
+    try {
+      const groups = await adminGetDuplicateTasks();
+      setDuplicateGroups(groups);
+      if (groups.length === 0) toast.success('No duplicates found! Task pool is clean.');
+      else toast(`Found ${groups.length} duplicate group(s) with ${groups.reduce((sum, g) => sum + g.length - 1, 0)} extra tasks.`, { icon: '⚠️' });
+    } catch (err) {
+      toast.error(err.message || 'Failed to scan duplicates');
+    } finally {
+      setScanningDupes(false);
+    }
+  };
+
+  const handleDeleteDuplicateTask = async (taskId) => {
+    try {
+      await adminDeleteTasksBulk([taskId]);
+      toast.success('Duplicate removed!');
+      setDuplicateGroups(prev => {
+        const updated = prev.map(group => group.filter(t => t.id !== taskId)).filter(group => group.length > 1);
+        return updated;
+      });
+      loadTabData('tasks');
+    } catch (err) {
+      toast.error(err.message || 'Failed to delete task');
+    }
+  };
+
+  const handleDeleteAllDuplicates = async () => {
+    if (!duplicateGroups?.length) return;
+    // Keep the first task in each group (oldest), delete the rest
+    const toDelete = duplicateGroups.flatMap(group => group.slice(1).map(t => t.id));
+    if (!window.confirm(`Delete ${toDelete.length} duplicate tasks? The first (oldest) copy of each group will be kept.`)) return;
+    try {
+      await adminDeleteTasksBulk(toDelete);
+      toast.success(`Removed ${toDelete.length} duplicates!`);
+      setDuplicateGroups([]);
+      loadTabData('tasks');
+    } catch (err) {
+      toast.error(err.message || 'Failed to delete duplicates');
     }
   };
 
@@ -611,61 +671,124 @@ export default function Admin() {
                 <p>No past submissions found.</p>
               </div>
             ) : (
-              <div className={styles.grid}>
-                {pastSubmissions.map((sub) => (
-                  <motion.div key={sub.id} className={styles.card} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-                    {sub.imageUrl && (
-                      <a href={sub.imageUrl} target="_blank" rel="noopener noreferrer">
-                        <img src={sub.imageUrl} alt="Submission" className={styles.photo} />
-                      </a>
-                    )}
-                    <div className={styles.cardBody}>
-                      <p className={styles.cardId}>Submission #{sub.id.slice(0, 8)}</p>
-                      <p className={styles.cardReason}>
-                        <strong>Status:</strong> 
-                        <span style={{ 
-                          color: sub.status === 'approved' ? 'var(--color-success)' : 'var(--color-error)',
-                          fontWeight: 'bold', marginLeft: '4px'
-                        }}>
-                          {sub.status.toUpperCase()}
-                        </span>
-                      </p>
-                      <p className={styles.cardReason}>
-                        <strong>User ID:</strong> <span style={{ fontSize: '10px' }}>{sub.userId}</span>
-                      </p>
-                      <p className={styles.cardReason}>
-                        <strong>AI reasoning:</strong> {sub.reason || 'No reasoning provided'}
-                      </p>
-                      {sub.confidence != null && (
-                        <p className={styles.cardConf}>Confidence: {Math.round(sub.confidence * 100)}%</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Clear All toolbar */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '12px' }}>
+                  <div>
+                    <p style={{ margin: 0, fontWeight: 700, color: 'var(--color-text)' }}>{pastSubmissions.length} past submissions</p>
+                    <p style={{ margin: '2px 0 0', fontSize: '13px', color: 'var(--color-text-secondary)' }}>Delete all at once to free up storage.</p>
+                  </div>
+                  <button
+                    onClick={handleClearAllPastSubmissions}
+                    disabled={clearingAll}
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '10px', color: '#f87171', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}
+                  >
+                    <Trash2 size={16} />
+                    {clearingAll ? 'Clearing...' : 'Clear All Submissions'}
+                  </button>
+                </div>
+                <div className={styles.grid}>
+                  {pastSubmissions.map((sub) => (
+                    <motion.div key={sub.id} className={styles.card} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                      {sub.imageUrl && (
+                        <a href={sub.imageUrl} target="_blank" rel="noopener noreferrer">
+                          <img src={sub.imageUrl} alt="Submission" className={styles.photo} />
+                        </a>
                       )}
-                    </div>
-                    <div className={styles.cardActions}>
-                      <button 
-                        className={styles.rejectBtn} 
-                        style={{ background: 'transparent', border: '1px solid var(--color-error)', color: 'var(--color-error)', display: 'flex', alignItems: 'center', gap: '4px' }}
-                        onClick={() => handleDeletePastSubmission(sub.id)}
-                      >
-                        <PremiumIcon icon={Trash2} color="ruby" size={16} /> Delete Permanently
-                      </button>
-                    </div>
-                  </motion.div>
-                ))}
+                      <div className={styles.cardBody}>
+                        <p className={styles.cardId}>Submission #{sub.id.slice(0, 8)}</p>
+                        <p className={styles.cardReason}>
+                          <strong>Status:</strong>
+                          <span style={{ color: sub.status === 'approved' ? 'var(--color-success)' : 'var(--color-error)', fontWeight: 'bold', marginLeft: '4px' }}>
+                            {sub.status.toUpperCase()}
+                          </span>
+                        </p>
+                        <p className={styles.cardReason}><strong>User ID:</strong> <span style={{ fontSize: '10px' }}>{sub.userId}</span></p>
+                        <p className={styles.cardReason}><strong>AI reasoning:</strong> {sub.reason || 'No reasoning provided'}</p>
+                        {sub.confidence != null && <p className={styles.cardConf}>Confidence: {Math.round(sub.confidence * 100)}%</p>}
+                      </div>
+                      <div className={styles.cardActions}>
+                        <button
+                          className={styles.rejectBtn}
+                          style={{ background: 'transparent', border: '1px solid var(--color-error)', color: 'var(--color-error)', display: 'flex', alignItems: 'center', gap: '4px' }}
+                          onClick={() => handleDeletePastSubmission(sub.id)}
+                        >
+                          <PremiumIcon icon={Trash2} color="ruby" size={16} /> Delete
+                        </button>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
               </div>
             )
           )}
           {/* TAB 6: TASKS MANAGER */}
           {activeTab === 'tasks' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <button 
-                  className={styles.approveBtn} 
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Action toolbar */}
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                <button
+                  className={styles.approveBtn}
                   style={{ width: 'auto', padding: '10px 20px' }}
                   onClick={() => setTaskModal({ open: true, task: { title: '', description: '', category: 'nature', points: 50, co2: 0, water: 0, waste: 0, verificationPrompt: '', difficulty: 'easy' }})}
                 >
                   + Add New Task
                 </button>
+                <button
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '8px', color: '#fbbf24', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}
+                  onClick={handleScanDuplicates}
+                  disabled={scanningDupes}
+                >
+                  <AlertTriangle size={16} />
+                  {scanningDupes ? 'Scanning...' : 'Scan for Duplicates'}
+                </button>
+                {duplicateGroups !== null && duplicateGroups.length > 0 && (
+                  <button
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', color: '#f87171', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}
+                    onClick={handleDeleteAllDuplicates}
+                  >
+                    <Trash2 size={16} /> Remove All Duplicates ({duplicateGroups.reduce((s, g) => s + g.length - 1, 0)} tasks)
+                  </button>
+                )}
               </div>
+
+              {/* Duplicate warning panel */}
+              {duplicateGroups !== null && duplicateGroups.length > 0 && (
+                <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '12px', padding: '16px 20px' }}>
+                  <h4 style={{ margin: '0 0 14px', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <AlertTriangle size={18} /> {duplicateGroups.length} Duplicate Group(s) Found
+                  </h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {duplicateGroups.map((group, gi) => (
+                      <div key={gi} style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '8px', padding: '12px 16px' }}>
+                        <p style={{ margin: '0 0 8px', fontWeight: 700, color: 'var(--color-text)', fontSize: '14px' }}>📌 "{group[0].title}"</p>
+                        {group.map((task, ti) => (
+                          <div key={task.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderTop: ti > 0 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+                            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                              {ti === 0 ? '✅ Keep' : '⚠️ Duplicate'} — ID: {task.id.slice(0, 10)}... · {task.points}pts · {task.category}
+                            </span>
+                            {ti > 0 && (
+                              <button
+                                onClick={() => handleDeleteDuplicateTask(task.id)}
+                                style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {duplicateGroups !== null && duplicateGroups.length === 0 && (
+                <div style={{ padding: '14px 18px', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '12px', color: '#34d399', fontWeight: 600, display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <CheckSquare size={18} /> Task pool is clean — no duplicates found!
+                </div>
+              )}
+
               <div className={styles.tableContainer}>
                 <table className={styles.table}>
                   <thead>
@@ -673,6 +796,7 @@ export default function Admin() {
                       <th>Title</th>
                       <th>Category</th>
                       <th>Points</th>
+                      <th>Source</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -682,6 +806,7 @@ export default function Admin() {
                         <td>{t.title}</td>
                         <td style={{ textTransform: 'capitalize' }}>{t.category}</td>
                         <td>{t.points}</td>
+                        <td><span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '100px', background: t.isAIGenerated ? 'rgba(139,92,246,0.15)' : 'rgba(16,185,129,0.15)', color: t.isAIGenerated ? '#a78bfa' : '#34d399', fontWeight: 700 }}>{t.isAIGenerated ? 'AI' : 'Manual'}</span></td>
                         <td className={styles.actionCell}>
                           <button className={styles.btnSm} onClick={() => setTaskModal({ open: true, task: t })}>Edit</button>
                           <button className={`${styles.btnSm} ${styles.danger}`} onClick={() => handleDeleteTask(t.id)}>Delete</button>

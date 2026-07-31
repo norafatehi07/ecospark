@@ -125,11 +125,13 @@ export default function App() {
       || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     const textSize = localStorage.getItem('ecospark-text-size') || 'normal';
     const highContrast = localStorage.getItem('ecospark-high-contrast') === 'true';
+    const themeContrast = localStorage.getItem('ecospark-theme-contrast') || 'default';
 
     setTheme(theme);
     setReducedMotion(reducedMotion);
     setTextSize(textSize);
     setHighContrast(highContrast);
+    useUiStore.getState().setThemeContrast(themeContrast);
   }, []);
 
   // Firebase Auth listener

@@ -7,11 +7,8 @@
   bottom: 0;
   left: 0;
   width: var(--sidebar-collapsed);
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border-right: var(--glass-border);
-  box-shadow: var(--elevation-2);
+  background: var(--color-bg-card-solid, var(--bg-card)); /* Match exact color of previous website */
+  border-right: 1.5px solid rgba(245, 158, 11, 0.4); /* Bolder Golden Border for navbar */
   flex-direction: column;
   z-index: 100;
   overflow: hidden;
@@ -37,7 +34,7 @@
   align-items: center;
   gap: 12px;
   padding: 24px 18px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1.5px solid rgba(245, 158, 11, 0.4); /* Bolder Golden Border */
   overflow: hidden;
   white-space: nowrap;
 }
@@ -51,16 +48,13 @@
 }
 
 .logoText {
-  font-family: var(--font-display);
-  font-size: var(--text-xl);
-  font-weight: var(--font-extrabold);
-  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  font-family: var(--font-ceremonial);
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--text-primary);
   opacity: 0;
   transition: opacity var(--transition-standard);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
 }
 
 @media (min-width: 1280px) {
@@ -71,6 +65,12 @@
   padding: 16px 10px;
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+.nav::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
 }
 
 .navInner {
@@ -81,31 +81,36 @@
 
 .navItem {
   position: relative;
+  height: 40px;
+  border-radius: var(--radius-md);
+  padding: 0 12px;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
-  border-radius: var(--radius-md);
-  color: var(--color-text-secondary);
   text-decoration: none;
+  color: var(--color-text-secondary);
   font-family: var(--font-body);
-  font-size: var(--text-sm);
-  font-weight: var(--font-medium);
+  font-size: 14px;
+  font-weight: 500;
   white-space: nowrap;
-  overflow: hidden;
-  transition: background var(--transition-micro), color var(--transition-micro);
+  transition: background 120ms ease-out, color 120ms ease-out;
   cursor: pointer;
 }
 
 .navItem:hover {
-  background: rgba(var(--color-primary-rgb), 0.08);
-  color: var(--color-primary);
+  background: var(--bg-overlay);
+  color: var(--color-text);
+}
+
+.hairline {
+  height: 1px;
+  background: var(--color-border);
+  margin: 12px 0;
 }
 
 .active {
-  color: var(--color-primary) !important;
-  background: rgba(var(--color-primary-rgb), 0.1) !important;
-  font-weight: var(--font-semibold) !important;
+  background: var(--bg-overlay) !important;
+  color: var(--color-text) !important;
 }
 
 .navIcon {
@@ -127,24 +132,84 @@
 .activeIndicator {
   position: absolute;
   left: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  top: calc(50% - 8px);
   width: 3px;
-  height: 60%;
-  background: var(--color-primary);
-  border-radius: 0 4px 4px 0;
-  box-shadow: var(--glow-primary);
+  height: 16px;
+  border-radius: 2px;
+  background: var(--accent);
 }
 
-/* User card */
+.readoutWrap {
+  padding: 0 var(--space-3, 12px);
+  margin-bottom: var(--space-3, 12px);
+}
+
 .userCard {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid rgba(201, 162, 83, 0.6);
+  border-bottom: 2px solid rgba(201, 162, 83, 0.8);
+  box-shadow: 0 -4px 12px rgba(201, 162, 83, 0.15);
   gap: 8px;
   overflow: visible;
+  transition: background 120ms ease-out;
+}
+
+.userCard:hover {
+  background: var(--bg-overlay);
+}
+
+.userLink {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  flex: 1;
+  min-width: 0;
+}
+
+.userAvatar {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.userInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.userName {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-bold);
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.logoutBtn {
+  background: transparent;
+  border: none;
+  padding: 8px;
+  cursor: pointer;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-standard);
+  flex-shrink: 0;
+}
+
+.logoutBtn:hover {
+  background: var(--color-error);
+  color: #FFF;
+}
+
+.userCard:hover {
+  background: var(--bg-overlay);
 }
 
 .userLink {

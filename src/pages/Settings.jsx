@@ -64,7 +64,7 @@ const TABS = [
 ];
 
 export default function Settings() {
-  const { activeTheme, reducedMotion, textSize, highContrast, setTheme, setReducedMotion, setTextSize, setHighContrast } = useUiStore();
+  const { activeTheme, reducedMotion, textSize, highContrast, themeContrast, setTheme, setReducedMotion, setTextSize, setHighContrast, setThemeContrast } = useUiStore();
   const { user, profile } = useAuthStore();
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('appearance');
@@ -171,15 +171,23 @@ export default function Settings() {
             <SelectRow
               icon="🌈" label="Theme" value={activeTheme}
               options={[
+                { value: 'regalia-noir', label: '👑 Regalia Noir' },
                 { value: 'regalia', label: '👑 Regalia' },
                 { value: 'metallic', label: '🌑 Metallic Black' },
-                { value: 'forest', label: '🌿 Forest Green' },
-                { value: 'ocean', label: '🌊 Ocean Blue' },
-                { value: 'sunset', label: '🌅 Sunset' },
                 { value: 'midnight', label: '🌌 Midnight Dark' },
               ]}
               onChange={setTheme}
             />
+            {activeTheme === 'regalia' && (
+              <SelectRow
+                icon="✨" label="Golden Contrast" value={themeContrast || 'default'}
+                options={[
+                  { value: 'default', label: 'Default' },
+                  { value: 'gold', label: 'Bolder Gold' },
+                ]}
+                onChange={setThemeContrast}
+              />
+            )}
             <SelectRow
               icon="🔤" label="Text Size" value={textSize}
               options={[

@@ -45,26 +45,16 @@ export const REWARDS_DB = [
   { id: 'frame-supernova', type: 'frame', name: 'Supernova', description: 'Cosmic Energy — a legendary deep-space frame with rotating neon gradients.', pointCost: 50000, tier: 'supernova', icon: '🌌' },
   { id: 'frame-prime', type: 'frame', name: 'Prime Frame', description: 'The Ascended Aura — the ultimate, reality-bending celestial frame.', pointCost: 999999, tier: 'prime', icon: '✨' },
 
-  // --- ULTRA FRAMES (Eco-Tech / Cyber-Sustainability line) ---
-  { id: 'frame-biocircuit', type: 'frame', name: 'Bio-Circuit Weave', description: 'Living circuitry grown from photosynthetic silicon — data-sap pulses through every glowing trace.', pointCost: 75000, tier: 'quantum', icon: '🧫' },
-  { id: 'frame-helix', type: 'frame', name: 'Genesis Helix', description: 'Twin strands of terraforming light orbit your avatar — the blueprint of a reborn biosphere.', pointCost: 120000, tier: 'helix', icon: '🧬' },
-  { id: 'frame-singularity', type: 'frame', name: 'Verdant Singularity', description: 'A collapsed star of pure life-energy. Reality bends, and forests bloom along the event horizon.', pointCost: 250000, tier: 'singularity', icon: '🌌' },
-
   // --- NAME GLOWS ---
   { id: 'glow-emerald', type: 'glow', name: 'Emerald Aura', description: 'A soft green glow surrounding your name in the community.', pointCost: 1500, tier: 'silver', icon: '🟩', cssClass: 'glow-emerald' },
-  { id: 'glow-aurora', type: 'glow', name: 'Aurora Borealis', description: 'A mesmerizing, shifting green and blue gradient applied to your name.', pointCost: 5000, tier: 'platinum', icon: '🌌', cssClass: 'glow-aurora' },
-  { id: 'glow-goldfoil', type: 'glow', name: 'Gold Foil', description: 'A highly sought-after metallic golden shimmer for your name.', pointCost: 10000, tier: 'god', icon: '🪙', cssClass: 'glow-goldfoil' },
   { id: 'glow-glitch', type: 'glow', name: 'Cyber Glitch', description: 'An ultra-rare cyberpunk neon glitch effect for your name.', pointCost: 15000, tier: 'gaia', icon: '👾', cssClass: 'glow-glitch' },
-  { id: 'glow-photon', type: 'glow', name: 'Photon Stream', description: 'A current of quantized cyan light flows endlessly through your name.', pointCost: 25000, tier: 'quantum', icon: '🔷', cssClass: 'glow-photon' },
   { id: 'glow-chlorophyll', type: 'glow', name: 'Chlorophyll Surge', description: 'Raw bio-energy — your name photosynthesizes light in real time.', pointCost: 40000, tier: 'helix', icon: '🍃', cssClass: 'glow-chlorophyll' },
-  { id: 'glow-eventbloom', type: 'glow', name: 'Event Bloom', description: 'Your letters warp around a micro-singularity of blooming antimatter.', pointCost: 60000, tier: 'singularity', icon: '🌸', cssClass: 'glow-eventbloom' },
 
   // --- COMPANIONS ---
   { id: 'comp-sprout', type: 'companion', name: 'Baby Sprout', description: 'A tiny animated sprout that floats next to your avatar.', pointCost: 2000, tier: 'gold', imageUrl: '/companions/sprout_trans.png' },
   { id: 'comp-waterwisp', type: 'companion', name: 'Water Wisp', description: 'A glowing blue droplet of pure energy orbiting your profile.', pointCost: 6000, tier: 'platinum', imageUrl: '/companions/waterwisp_trans.png' },
   { id: 'comp-terrabot', type: 'companion', name: 'Terra Bot', description: 'A high-tech floating sci-fi drone that accompanies you.', pointCost: 12000, tier: 'god', imageUrl: '/companions/terrabot_trans.png' },
   { id: 'comp-phoenix', type: 'companion', name: 'Solar Phoenix', description: 'A legendary creature of fire and light floating beside you.', pointCost: 25000, tier: 'supernova', imageUrl: '/companions/phoenix_trans.png' },
-  { id: 'comp-nanosprite', type: 'companion', name: 'Nano Sprite', description: 'A swarm-intelligence of pollinator microbots compressed into one shimmering sprite.', pointCost: 40000, tier: 'quantum', icon: '🛸' },
 
   // --- BACKGROUNDS ---
   { id: 'bg-royalvelvet', type: 'background', name: 'Royal Velvet', description: 'A luxurious crimson and gold animated backdrop fit for royalty.', pointCost: 3000, tier: 'gold', icon: '👑', cssClass: 'bg-royalvelvet' },

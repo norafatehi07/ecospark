@@ -14,6 +14,25 @@ const getPreferredMotion = () => {
   } catch { return false; }
 };
 
+export const THEMES = [
+  { id: 'regalia-noir', label: 'Regalia Noir', group: 'regalia' },
+  { id: 'regalia-light', label: 'Regalia Light', group: 'regalia' },
+  { id: 'midnight', label: 'Midnight', group: 'classic' },
+  { id: 'metallic', label: 'Metallic', group: 'classic' },
+];
+
+export const TEXT_SIZES = [
+  { id: 'default', label: 'Default' },
+  { id: 'large', label: 'Large' },
+  { id: 'larger', label: 'Larger' },
+];
+
+export const CONTRASTS = [
+  { id: 'default', label: 'Default' },
+  { id: 'high', label: 'High' },
+  { id: 'golden', label: 'Golden' },
+];
+
 export const useUiStore = create((set, get) => ({
   // AI Coach
   coachOpen: false,
@@ -30,6 +49,7 @@ export const useUiStore = create((set, get) => ({
   reducedMotion: getPreferredMotion(),
   textSize: localStorage.getItem('ecospark-text-size') || 'normal',
   highContrast: localStorage.getItem('ecospark-high-contrast') === 'true',
+  themeContrast: localStorage.getItem('ecospark-theme-contrast') || 'default',
 
   // Notifications
   notifications: [],
@@ -39,6 +59,36 @@ export const useUiStore = create((set, get) => ({
   toggleCoach: () => set((s) => ({ coachOpen: !s.coachOpen, coachHasNewTip: false })),
   openCoach: () => set({ coachOpen: true, coachHasNewTip: false }),
   closeCoach: () => set({ coachOpen: false }),
+
+  // Appearance Actions
+  setTheme: (themeId) => {
+    localStorage.setItem('ecospark-theme', themeId);
+    document.documentElement.dataset.theme = themeId;
+    set({ activeTheme: themeId });
+  },
+  setTextSize: (sizeId) => {
+    localStorage.setItem('ecospark-text-size', sizeId);
+    document.documentElement.dataset.textSize = sizeId;
+    set({ textSize: sizeId });
+  },
+  setContrast: (contrastId) => {
+    localStorage.setItem('ecospark-high-contrast', contrastId === 'high' ? 'true' : 'false');
+    if (contrastId === 'high') {
+      document.documentElement.dataset.contrast = 'high';
+    } else {
+      delete document.documentElement.dataset.contrast;
+    }
+    set({ highContrast: contrastId === 'high' });
+  },
+  setThemeContrast: (contrastId) => {
+    localStorage.setItem('ecospark-theme-contrast', contrastId);
+    if (contrastId !== 'default') {
+      document.documentElement.dataset.themeContrast = contrastId;
+    } else {
+      delete document.documentElement.dataset.themeContrast;
+    }
+    set({ themeContrast: contrastId });
+  },
 
   appendCoachMessage: (message) =>
     set((s) => ({ coachMessages: [...s.coachMessages, message] })),
