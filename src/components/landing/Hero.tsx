@@ -102,17 +102,7 @@ export function Hero() {
           Made with ❤️ by
         </div>
         <div className="flex flex-wrap justify-center items-center gap-8 md:gap-16 font-heading italic text-white text-2xl md:text-3xl tracking-tight">
-          <span>Amitesh</span>
-          <span className="text-white/40">&middot;</span>
-          <span>Anurag</span>
-          <span className="text-white/40">&middot;</span>
-          <span>Abhijay</span>
-          <span className="text-white/40">&middot;</span>
-          <span>Akanksha</span>
-          <span className="text-white/40">&middot;</span>
-          <span>Vanshika 1</span>
-          <span className="text-white/40">&middot;</span>
-          <span>Vanshika 2</span>
+          <span>Amitesh Yadav</span>
         </div>
       </motion.div>
     </section>
