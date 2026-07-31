@@ -1,0 +1,43 @@
+/* src/components/coach/AICoachWidget.module.css */
+
+.fab {
+  position: fixed;
+  bottom: calc(var(--bottombar-height) + 16px);
+  right: 20px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--elevation-3), var(--glow-primary);
+  z-index: 1000;
+}
+
+@media (min-width: 768px) {
+  .fab {
+    bottom: 24px;
+  }
+}
+
+.fabIcon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.tipBadge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 10px;
+  height: 10px;
+  background: var(--color-gold);
+  border-radius: 50%;
+  border: 2px solid white;
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* src/components/coach/CoachPanel.module.css - included here for simplicity */

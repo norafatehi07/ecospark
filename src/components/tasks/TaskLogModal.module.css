@@ -1,0 +1,279 @@
+/* src/components/tasks/TaskLogModal.module.css */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px);
+  z-index: 3000;
+}
+
+.modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(94vw, 520px);
+  height: auto;
+  max-height: 85vh; /* use safe vh instead of dvh */
+  background: var(--color-bg-card);
+  border-radius: var(--card-radius-lg);
+  box-shadow: var(--elevation-4);
+  z-index: 3001;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: var(--font-bold);
+  color: var(--color-text);
+  margin: 0;
+}
+
+.points {
+  font-size: var(--text-sm);
+  font-weight: var(--font-bold);
+  color: var(--color-gold);
+  background: rgba(var(--color-gold-rgb), 0.1);
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-micro);
+  flex-shrink: 0;
+}
+
+.closeBtn:hover { background: var(--color-surface); }
+
+.body {
+  padding: 20px 24px max(24px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1 1 auto;
+  min-height: 120px;
+}
+
+.footer {
+  padding: 16px 24px max(24px, env(safe-area-inset-bottom));
+  background: var(--color-bg-card);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.instruction {
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+  margin: 0;
+  line-height: var(--line-relaxed);
+}
+
+.taskPrompt {
+  background: rgba(var(--color-primary-rgb), 0.06);
+  border: 1px solid rgba(var(--color-primary-rgb), 0.2);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  line-height: var(--line-relaxed);
+}
+
+.uploadZone {
+  border: 2px dashed var(--color-border-strong);
+  border-radius: var(--card-radius);
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: border-color var(--transition-micro), background var(--transition-micro);
+  text-align: center;
+}
+
+.uploadZone:hover {
+  border-color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb), 0.04);
+}
+
+.uploadIcon { font-size: 40px; }
+
+.uploadZone p {
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+}
+
+.uploadHint {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.previewWrapper {
+  position: relative;
+  border-radius: var(--card-radius);
+  overflow: hidden;
+}
+
+.preview {
+  width: 100%;
+  max-height: 240px;
+  object-fit: cover;
+  display: block;
+  border-radius: var(--card-radius);
+}
+
+.changePhoto {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  background: rgba(0,0,0,0.6);
+  color: white;
+  border: none;
+  border-radius: var(--radius-full);
+  padding: 6px 14px;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: background var(--transition-micro);
+}
+
+.changePhoto:hover { background: rgba(0,0,0,0.8); }
+
+.hiddenInput { display: none; }
+
+.submitBtn {
+  padding: 14px;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  font-weight: var(--font-bold);
+  cursor: pointer;
+  box-shadow: var(--glow-primary);
+  transition: opacity var(--transition-micro);
+}
+
+.submitBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Verification state */
+.verificationState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+  padding: 8px 0;
+}
+
+.progressBar {
+  width: 100%;
+  height: 6px;
+  background: var(--color-surface);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--fill-color, var(--color-primary));
+  border-radius: var(--radius-full);
+  transition: width 0.6s ease;
+}
+
+.stageIcon {
+  font-size: 52px;
+  line-height: 1;
+}
+
+.stageMsg {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+  margin: 0;
+  max-width: 320px;
+}
+
+.reasonBox {
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  text-align: left;
+  width: 100%;
+  line-height: var(--line-relaxed);
+}
+
+.submittedPhoto {
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  border-radius: var(--card-radius);
+}
+
+.doneActions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.doneBtn {
+  flex: 1;
+  padding: 12px;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  font-weight: var(--font-bold);
+  cursor: pointer;
+}
+
+.retryBtn {
+  flex: 1;
+  padding: 12px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1.5px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+}
+
+.waitNote {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  margin: 0;
+  max-width: 300px;
+}

@@ -1,0 +1,620 @@
+/* ============================================================
+   EcoSpark Design Tokens
+   ============================================================ */
+
+:root {
+  /* ------------------------------------------
+     ELEVATION & SHADOWS
+  ------------------------------------------ */
+  --elevation-0: none;
+  --elevation-1: 0 1px 2px rgba(16, 24, 16, 0.06), 0 1px 1px rgba(16, 24, 16, 0.04);
+  --elevation-2: 0 4px 10px rgba(16, 24, 16, 0.10), 0 2px 4px rgba(16, 24, 16, 0.06);
+  --elevation-3: 0 12px 28px rgba(16, 24, 16, 0.16), 0 4px 10px rgba(16, 24, 16, 0.08);
+  --elevation-4: 0 24px 48px rgba(16, 24, 16, 0.22), 0 8px 16px rgba(16, 24, 16, 0.12);
+
+  /* ------------------------------------------
+     GLOW EFFECTS
+  ------------------------------------------ */
+  --glow-primary: 0 0 24px rgba(46, 125, 50, 0.45), 0 0 8px rgba(46, 125, 50, 0.25);
+  --glow-gold: 0 0 24px rgba(245, 158, 11, 0.5), 0 0 8px rgba(245, 158, 11, 0.3);
+  --glow-blue: 0 0 24px rgba(2, 119, 189, 0.45), 0 0 8px rgba(2, 119, 189, 0.25);
+  --glow-danger: 0 0 16px rgba(239, 68, 68, 0.4);
+
+  /* ------------------------------------------
+     GLASS PANEL SYSTEM
+  ------------------------------------------ */
+  --glass-bg: rgba(255, 255, 255, 0.62);
+  --glass-bg-strong: rgba(255, 255, 255, 0.82);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.45);
+  --glass-blur: blur(18px);
+  --glass-blur-sm: blur(10px);
+
+  /* ------------------------------------------
+     TYPOGRAPHY
+  ------------------------------------------ */
+  --font-display: 'Fraunces', 'Georgia', serif;
+  --font-body: 'Manrope', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  /* Ceremonial serif — landing hero, tier-reveal item names, Celestial titles.
+     Deliberately NOT used for UI chrome, tables, or body copy. */
+  --font-ceremonial: 'Fraunces', 'Instrument Serif', Georgia, serif;
+
+  --text-xs: clamp(0.65rem, 1.5vw, 0.75rem);
+  --text-sm: clamp(0.8rem, 1.8vw, 0.875rem);
+  --text-base: clamp(0.875rem, 2vw, 1rem);
+  --text-md: clamp(1rem, 2.2vw, 1.125rem);
+  --text-lg: clamp(1.1rem, 2.5vw, 1.25rem);
+  --text-xl: clamp(1.25rem, 3vw, 1.5rem);
+  --text-2xl: clamp(1.5rem, 3.5vw, 1.875rem);
+  --text-3xl: clamp(1.875rem, 4vw, 2.25rem);
+  --text-4xl: clamp(2.25rem, 5vw, 3rem);
+  --text-5xl: clamp(2.75rem, 6vw, 3.75rem);
+
+  --font-light: 300;
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+  --font-extrabold: 800;
+
+  --line-tight: 1.2;
+  --line-snug: 1.35;
+  --line-normal: 1.5;
+  --line-relaxed: 1.65;
+
+  /* ------------------------------------------
+     MOTION
+  ------------------------------------------ */
+  --transition-instant: 80ms ease;
+  --transition-micro: 150ms ease;
+  --transition-standard: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-enter: 350ms cubic-bezier(0.0, 0.0, 0.2, 1);
+  --transition-spring: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ------------------------------------------
+     LAYOUT
+  ------------------------------------------ */
+  --sidebar-width: 260px;
+  --sidebar-collapsed: 72px;
+  --topbar-height: 64px;
+  --bottombar-height: 64px;
+  --max-content: 1440px;
+  --content-padding: clamp(16px, 3vw, 32px);
+  --card-radius: 16px;
+  --card-radius-lg: 24px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-full: 9999px;
+
+  /* ------------------------------------------
+     FOREST GREEN THEME (default)
+  ------------------------------------------ */
+  --color-primary-50: #E8F5E9;
+  --color-primary-100: #C8E6C9;
+  --color-primary-200: #A5D6A7;
+  --color-primary-300: #81C784;
+  --color-primary-400: #66BB6A;
+  --color-primary-500: #4CAF50;
+  --color-primary-600: #43A047;
+  --color-primary-700: #388E3C;
+  --color-primary-800: #2E7D32;
+  --color-primary-900: #1B5E20;
+
+  --color-primary: #2E7D32;
+  --color-primary-light: #4CAF50;
+  --color-primary-dark: #1B5E20;
+  --color-primary-rgb: 46, 125, 50;
+
+  --color-secondary: #00897B;
+  --color-secondary-light: #26A69A;
+  --color-secondary-dark: #00695C;
+
+  /* Gold accent — reserved for top rewards / premium tiers */
+  --color-gold: #F59E0B;
+  --color-gold-light: #FCD34D;
+  --color-gold-dark: #D97706;
+  --color-gold-rgb: 245, 158, 11;
+
+  --color-success: #22C55E;
+  --color-warning: #F59E0B;
+  --color-error: #EF4444;
+  --color-info: #3B82F6;
+
+  /* Neutrals */
+  --color-neutral-0: #FFFFFF;
+  --color-neutral-50: #F8FAF8;
+  --color-neutral-100: #EFF4EF;
+  --color-neutral-200: #DCE8DC;
+  --color-neutral-300: #BDD4BD;
+  --color-neutral-400: #8FAF8F;
+  --color-neutral-500: #668866;
+  --color-neutral-600: #4A664A;
+  --color-neutral-700: #334433;
+  --color-neutral-800: #1E2B1E;
+  --color-neutral-900: #0F160F;
+
+  --color-bg: #F4F9F4;
+  --color-bg-card: #FFFFFF;
+  --color-bg-elevated: #FFFFFF;
+  --color-surface: #EFF6EF;
+  --color-surface-raised: #FFFFFF;
+  --color-border: rgba(46, 125, 50, 0.12);
+  --color-border-strong: rgba(46, 125, 50, 0.25);
+  --color-text: #1E2B1E;
+  --color-text-secondary: #4A664A;
+  --color-text-tertiary: #668866;
+  --color-text-inverse: #FFFFFF;
+
+  /* Streak flame */
+  --color-streak: #FF6B35;
+  --color-streak-glow: rgba(255, 107, 53, 0.4);
+}
+
+/* ------------------------------------------
+   OCEAN BLUE THEME
+------------------------------------------ */
+[data-theme="ocean"] {
+  --color-primary: #0277BD;
+  --color-primary-light: #039BE5;
+  --color-primary-dark: #01579B;
+  --color-primary-rgb: 2, 119, 189;
+
+  --color-secondary: #00838F;
+  --color-secondary-light: #00ACC1;
+  --color-secondary-dark: #006064;
+
+  --color-neutral-50: #F0F7FF;
+  --color-neutral-100: #E1EFFF;
+  --color-neutral-200: #C3DFFF;
+  --color-neutral-700: #1A3050;
+  --color-neutral-800: #0D1F33;
+
+  --color-bg: #F0F7FF;
+  --color-bg-card: #FFFFFF;
+  --color-surface: #E4F0FA;
+  --color-border: rgba(2, 119, 189, 0.12);
+  --color-border-strong: rgba(2, 119, 189, 0.25);
+  --color-text: #0D1F33;
+  --color-text-secondary: #1A4A6B;
+  --color-text-tertiary: #2E6A9B;
+
+  --glow-primary: 0 0 24px rgba(2, 119, 189, 0.45), 0 0 8px rgba(2, 119, 189, 0.25);
+}
+
+/* ------------------------------------------
+   DARK MODE THEME
+------------------------------------------ */
+[data-theme="dark"] {
+  --color-primary: #4CAF50;
+  --color-primary-light: #66BB6A;
+  --color-primary-dark: #388E3C;
+  --color-primary-rgb: 76, 175, 80;
+
+  --color-secondary: #26A69A;
+  --color-secondary-light: #4DB6AC;
+
+  --glass-bg: rgba(20, 30, 20, 0.72);
+  --glass-bg-strong: rgba(20, 30, 20, 0.88);
+  --glass-border: 1px solid rgba(76, 175, 80, 0.18);
+
+  --color-bg: #0A0F0A;
+  --color-bg-card: #111811;
+  --color-bg-elevated: #182018;
+  --color-surface: #182018;
+  --color-surface-raised: #1E281E;
+  --color-border: rgba(76, 175, 80, 0.12);
+  --color-border-strong: rgba(76, 175, 80, 0.28);
+  --color-text: #E8F5E9;
+  --color-text-secondary: #A5D6A7;
+  --color-text-tertiary: #81C784;
+  --color-text-inverse: #0A0F0A;
+
+  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 1px rgba(0, 0, 0, 0.3);
+  --elevation-2: 0 4px 10px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --elevation-3: 0 12px 28px rgba(0, 0, 0, 0.6), 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+
+/* ------------------------------------------
+   MIDNIGHT DARK THEME
+   True dark — Material Design elevation model
+   WCAG AA contrast guaranteed (text #E2E8F0 on bg #0F1117 = 14.7:1)
+   Depth via border-glow, not drop shadows
+------------------------------------------ */
+[data-theme="midnight"] {
+  --color-primary: #5EBA80;
+  --color-primary-light: #7ECFA0;
+  --color-primary-dark: #3DA060;
+  --color-primary-rgb: 94, 186, 128;
+
+  --color-secondary: #38B2AC;
+  --color-secondary-light: #4FD1CB;
+  --color-secondary-dark: #2C9B96;
+
+  /* Glass surfaces use dark-tinted backgrounds + colored border glow for depth */
+  --glass-bg: rgba(16, 22, 16, 0.85);
+  --glass-bg-strong: rgba(16, 22, 16, 0.95);
+  --glass-border: 1px solid rgba(94, 186, 128, 0.20);
+  --glass-blur: blur(20px);
+
+  /* Elevation via subtle colored border brightness rather than shadows */
+  --elevation-0: none;
+  --elevation-1: 0 0 0 1px rgba(94, 186, 128, 0.08);
+  --elevation-2: 0 0 0 1px rgba(94, 186, 128, 0.12), 0 4px 12px rgba(0,0,0,0.5);
+  --elevation-3: 0 0 0 1px rgba(94, 186, 128, 0.18), 0 8px 24px rgba(0,0,0,0.65);
+  --elevation-4: 0 0 0 1px rgba(94, 186, 128, 0.25), 0 16px 40px rgba(0,0,0,0.75);
+
+  /* Glow stays green but more vivid on dark */
+  --glow-primary: 0 0 20px rgba(94, 186, 128, 0.5), 0 0 6px rgba(94, 186, 128, 0.3);
+  --glow-gold: 0 0 20px rgba(245, 158, 11, 0.55), 0 0 6px rgba(245, 158, 11, 0.3);
+
+  /* Near-black base — NOT pure #000; each layer is slightly lighter per elevation model */
+  --color-bg: #0F1117;
+  --color-bg-card: #161B22;         /* dp1 — slightly lifted */
+  --color-bg-elevated: #1C2333;     /* dp2 — modals, dropdowns */
+  --color-surface: #1C2333;
+  --color-surface-raised: #222D40;  /* dp3 — tooltips */
+
+  --color-border: rgba(94, 186, 128, 0.10);
+  --color-border-strong: rgba(94, 186, 128, 0.22);
+
+  /* Text — meets WCAG AA at 4.5:1 against all surface levels */
+  --color-text: #E2E8F0;
+  --color-text-secondary: #94A3B8;
+  --color-text-tertiary: #64748B;
+  --color-text-inverse: #0F1117;
+
+  --color-streak: #FF8C5A;
+  --color-streak-glow: rgba(255, 140, 90, 0.4);
+}
+
+/* ------------------------------------------
+   SUNSET THEME — warm amber/coral light
+------------------------------------------ */
+[data-theme="sunset"] {
+  --color-primary: #D97706;
+  --color-primary-light: #F59E0B;
+  --color-primary-dark: #B45309;
+  --color-primary-rgb: 217, 119, 6;
+
+  --color-secondary: #DC5030;
+  --color-secondary-light: #EF6642;
+  --color-secondary-dark: #C24428;
+
+  --color-neutral-50: #FFFBF5;
+  --color-neutral-100: #FEF3E2;
+  --color-neutral-200: #FCDEB4;
+  --color-neutral-700: #4A2800;
+  --color-neutral-800: #2D1800;
+
+  --color-bg: #FFF8F0;
+  --color-bg-card: #FFFFFF;
+  --color-bg-elevated: #FFFFFF;
+  --color-surface: #FEF0DC;
+  --color-surface-raised: #FFFFFF;
+
+  --color-border: rgba(217, 119, 6, 0.14);
+  --color-border-strong: rgba(217, 119, 6, 0.28);
+  --color-text: #2D1800;
+  --color-text-secondary: #6B3A00;
+  --color-text-tertiary: #9A6000;
+  --color-text-inverse: #FFFFFF;
+
+  --glow-primary: 0 0 24px rgba(217, 119, 6, 0.45), 0 0 8px rgba(217, 119, 6, 0.25);
+
+  --color-streak: #EF4444;
+  --color-streak-glow: rgba(239, 68, 68, 0.4);
+}
+
+/* ------------------------------------------
+   HIGH CONTRAST MODE
+------------------------------------------ */
+[data-contrast="high"] {
+  --color-text: #000000;
+  --color-bg: #FFFFFF;
+  --color-border: #000000;
+  --color-primary: #005A00;
+  --glass-bg: rgba(255, 255, 255, 0.98);
+}
+
+/* ------------------------------------------
+   TEXT SIZE SCALE OVERRIDES
+------------------------------------------ */
+[data-text-size="large"] {
+  --text-base: 1.125rem;
+  --text-sm: 1rem;
+  --text-xs: 0.875rem;
+  --text-lg: 1.375rem;
+  --text-xl: 1.625rem;
+}
+
+[data-text-size="xlarge"] {
+  --text-base: 1.25rem;
+  --text-sm: 1.125rem;
+  --text-xs: 1rem;
+  --text-lg: 1.5rem;
+  --text-xl: 1.875rem;
+}
+
+/* ============================================================
+   CELESTIAL AURORA
+   Reserved for the top reward tier (Celestial / frame-prime) and nothing else.
+   Registering --gradient-angle as an <angle> is what makes the conic gradient
+   animatable at all; a plain custom property would jump, not sweep.
+   ============================================================ */
+@property --gradient-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.celestial-aurora {
+  background: conic-gradient(
+    from var(--gradient-angle),
+    #7C3AED, #22D3EE, #F59E0B, #7C3AED
+  );
+  animation: aurora-spin 6s linear infinite;
+}
+
+@keyframes aurora-spin {
+  to { --gradient-angle: 360deg; }
+}
+
+/* ============================================================
+   GROWTH RINGS — the Regalia signature motif
+   Concentric rings, read as tree growth rings / ripples. Ring count and
+   ornamentation scale with tier: "grown further" encoded visually.
+   Consumed by src/components/common/GrowthRings.jsx.
+   ============================================================ */
+@keyframes ring-drift {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes ring-pulse {
+  0%   { transform: scale(0.82); opacity: 0.85; }
+  70%  { opacity: 0; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+@keyframes ring-breathe {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 0.9; }
+}
+
+/* Honour both the OS setting and the in-app override.
+   The globals.css blanket rule collapses durations to 0.01ms, which would leave
+   these mid-sweep; killing the animation outright is the legible end state. */
+@media (prefers-reduced-motion: reduce) {
+  .celestial-aurora { animation: none; }
+}
+
+[data-reduced-motion="true"] .celestial-aurora { animation: none; }
+
+
+/* ------------------------------------------
+   REGALIA THEME — flagship identity
+   Deep obsidian-emerald base, gold ceremonial accent.
+   Hairline borders are GOLD, not green: that single choice is what stops this
+   reading as "another dark mode" and starts it reading as ceremonial.
+
+   Contrast measured against --color-bg #0A0F0C (same convention as midnight):
+     --color-text           #F3F6F1 → 17.3:1  (AAA)
+     --color-text-secondary #A8BCA9 →  8.6:1  (AAA)
+     --color-text-tertiary  #6E8770 →  4.6:1  (AA, body text min)
+   Against the lightest surface --color-surface-raised #1C2A1E:
+     --color-text           #F3F6F1 → 13.1:1  (AAA)
+     --color-text-secondary #A8BCA9 →  6.5:1  (AA)
+     --color-text-tertiary  #6E8770 →  3.5:1  → LARGE TEXT / NON-TEXT ONLY.
+   Do not use --color-text-tertiary for body copy on raised surfaces.
+
+   The amethyst→cyan→gold aurora is reserved for the Celestial tier alone.
+   Its rarity is the design; do not reach for it elsewhere.
+------------------------------------------ */
+[data-theme="regalia"] {
+  --color-primary: #1FA463;
+  --color-primary-light: #34C880;
+  --color-primary-dark: #0F5132;
+  --color-primary-rgb: 31, 164, 99;
+
+  /* amethyst — already the platinum tier colour, so this reuses existing equity */
+  --color-secondary: #7C3AED;
+  --color-secondary-light: #A78BFA;
+  --color-secondary-dark: #5B21B6;
+
+  --glass-bg: rgba(10, 15, 12, 0.78);
+  --glass-bg-strong: rgba(10, 15, 12, 0.92);
+  --glass-border: 1px solid rgba(245, 158, 11, 0.16);
+  --glass-blur: blur(22px);
+  --glass-blur-sm: blur(12px);
+
+  --color-bg: #0A0F0C;
+  --color-bg-card: #10160F;
+  --color-bg-elevated: #161F16;
+  --color-surface: #161F16;
+  --color-surface-raised: #1C2A1E;
+
+  --color-border: rgba(245, 158, 11, 0.10);
+  --color-border-strong: rgba(245, 158, 11, 0.28);
+
+  --color-text: #F3F6F1;
+  --color-text-secondary: #A8BCA9;
+  --color-text-tertiary: #6E8770;
+  --color-text-inverse: #0A0F0C;
+
+  /* Depth via gold hairline brightness first, drop shadow second */
+  --elevation-0: none;
+  --elevation-1: 0 0 0 1px rgba(245, 158, 11, 0.06);
+  --elevation-2: 0 0 0 1px rgba(245, 158, 11, 0.10), 0 4px 14px rgba(0, 0, 0, 0.55);
+  --elevation-3: 0 0 0 1px rgba(245, 158, 11, 0.16), 0 10px 28px rgba(0, 0, 0, 0.70);
+  --elevation-4: 0 0 0 1px rgba(245, 158, 11, 0.22), 0 20px 48px rgba(0, 0, 0, 0.80);
+
+  --glow-primary: 0 0 22px rgba(31, 164, 99, 0.50), 0 0 8px rgba(31, 164, 99, 0.30);
+  --glow-gold: 0 0 22px rgba(245, 158, 11, 0.55), 0 0 8px rgba(245, 158, 11, 0.32);
+  --glow-celestial:
+    0 0 40px rgba(124, 58, 237, 0.55),
+    0 0 20px rgba(34, 211, 238, 0.40),
+    0 0 10px rgba(245, 158, 11, 0.50);
+
+  --color-streak: #FF8C5A;
+  --color-streak-glow: rgba(255, 140, 90, 0.4);
+}
+
+[data-theme="regalia"][data-theme-contrast="gold"] {
+  --glass-border: 1.5px solid rgba(245, 158, 11, 0.4);
+  --color-border: rgba(245, 158, 11, 0.25);
+  --color-border-strong: rgba(245, 158, 11, 0.5);
+
+  --elevation-1: 0 0 0 1.5px rgba(245, 158, 11, 0.25);
+  --elevation-2: 0 0 0 1.5px rgba(245, 158, 11, 0.35), 0 4px 14px rgba(0, 0, 0, 0.65);
+  --elevation-3: 0 0 0 1.5px rgba(245, 158, 11, 0.45), 0 10px 28px rgba(0, 0, 0, 0.80);
+  --elevation-4: 0 0 0 1.5px rgba(245, 158, 11, 0.6), 0 20px 48px rgba(0, 0, 0, 0.90);
+
+  --glow-gold: 0 0 24px rgba(245, 158, 11, 0.6), 0 0 12px rgba(245, 158, 11, 0.4);
+}
+
+/* ------------------------------------------
+   DARK METALLIC THEME
+------------------------------------------ */
+[data-theme="metallic"] {
+  --color-primary: #94A3B8;
+  --color-primary-light: #CBD5E1;
+  --color-primary-dark: #64748B;
+  --color-primary-rgb: 148, 163, 184;
+
+  --color-secondary: #0EA5E9;
+  --color-secondary-light: #38BDF8;
+  --color-secondary-dark: #0284C7;
+
+  /* Typography: Using clean, modern UI defaults (Manrope & Inter) instead of Serif */
+  --font-display: "Manrope", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+
+  /* Glass surfaces */
+  --glass-bg: rgba(255, 255, 255, 0.01);
+  --glass-bg-strong: rgba(255, 255, 255, 0.04);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.15);
+  --glass-blur: blur(12px);
+
+  /* Backgrounds */
+  --color-bg: #000000;
+  --bg-image: radial-gradient(ellipse at top, #1a1c29, #000000 70%);
+  --color-bg-card: rgba(26, 28, 41, 0.4);
+  --color-bg-elevated: #1a1c29;
+  --color-surface: rgba(255, 255, 255, 0.03);
+  --color-surface-raised: rgba(255, 255, 255, 0.06);
+
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-border-strong: rgba(255, 255, 255, 0.25);
+
+  /* Text */
+  --color-text: #FFFFFF;
+  --color-text-secondary: rgba(255, 255, 255, 0.9);
+  --color-text-tertiary: rgba(255, 255, 255, 0.6);
+  --color-text-inverse: #000000;
+  
+  --elevation-1: 0 4px 24px rgba(0, 0, 0, 0.5);
+  --elevation-2: 0 8px 32px rgba(0, 0, 0, 0.7);
+  --elevation-3: 0 16px 48px rgba(0, 0, 0, 0.8);
+}
+/* ------------------------------------------
+   REGALIA THEMES
+------------------------------------------ */
+[data-theme="regalia-noir"] {
+  --bg-base: #080C0A;
+  --bg-card: linear-gradient(180deg, #141C18 0%, #0E1411 100%);
+  --bg-elevated: #141C18;
+  --bg-raised: #1B2620;
+  --bg-overlay: rgba(4, 7, 6, 0.82);
+  --bg-inset: #050807;
+
+  --gold-champagne: #E8C87A;
+  --gold: #C9A253;
+  --gold-deep: #8C6D33;
+  --gold-whisper: rgba(201, 162, 83, 0.10);
+  --oystersteel: #B9C4C0;
+  --oystersteel-dim: #7C8783;
+  --everose: #E0A48D;
+
+  --eco-canopy: #2FE38A;
+  --eco-leaf: #1FB56C;
+  --eco-moss: #0F7A47;
+  --eco-fern: #7FD8A8;
+  --eco-soil: #3E2F22;
+  --eco-bark: #26201A;
+  --water: #4FB8D8;
+  --sun: #F0B849;
+  --danger: #E5484D;
+  --danger-dim: #7A2226;
+
+  --color-warning: var(--sun);
+  --color-error: var(--danger);
+  --color-info: var(--water);
+  --color-text: #E8F5E9;
+  --color-text-secondary: #A5D6A7;
+  --color-text-tertiary: #81C784;
+  --color-text-inverse: #0A0F0A;
+  --color-streak: var(--sun);
+  --color-streak-glow: rgba(240, 184, 73, 0.4);
+
+  --color-bg: #080C0A;
+  --color-bg-card: #0E1411;
+  --color-bg-elevated: #141C18;
+  --color-surface: #141C18;
+  --color-surface-raised: #1B2620;
+  --color-border: rgba(201, 162, 83, 0.10);
+  --color-border-strong: rgba(201, 162, 83, 0.25);
+
+  --glass-bg: rgba(14, 20, 17, 0.78);
+  --glass-bg-strong: rgba(14, 20, 17, 0.92);
+  --glass-border: 1px solid var(--gold-whisper);
+  --glass-blur: blur(22px);
+  --glass-blur-sm: blur(12px);
+  --glow-primary: 0 0 24px rgba(47, 227, 138, 0.45), 0 0 8px rgba(47, 227, 138, 0.25);
+  --glow-gold: 0 0 24px rgba(201, 162, 83, 0.45), 0 0 8px rgba(201, 162, 83, 0.25);
+  --glow-celestial: 0 0 40px rgba(124, 58, 237, 0.55), 0 0 20px rgba(34, 211, 238, 0.40), 0 0 10px rgba(245, 158, 11, 0.50);
+}
+
+[data-theme="regalia-day"], [data-theme="regalia-light"] {
+  --bg-base: #F7F5F0;
+  --bg-card: #FFFFFF;
+  --bg-elevated: #FFFFFF;
+  --bg-raised: #EDEAE3;
+  --bg-overlay: rgba(247, 245, 240, 0.82);
+  --bg-inset: #E8E5DF;
+
+  --gold-champagne: #6F4800;
+  --gold: #725214;
+  --gold-deep: #5E4A24;
+  --gold-whisper: rgba(154, 122, 60, 0.15);
+  --oystersteel: #505F5A;
+  --oystersteel-dim: #7C8783;
+  --everose: #C07A5E;
+
+  --eco-canopy: #005518;
+  --eco-leaf: #14804D;
+  --eco-moss: #0B5232;
+  --eco-fern: #005124;
+  --eco-soil: #4F3C2C;
+  --eco-bark: #33261C;
+  --water: #00648A;
+  --sun: #813400;
+  --danger: #D32F2F;
+  --danger-dim: #FFCDD2;
+
+  --color-bg: #F7F5F0;
+  --color-bg-card: #FFFFFF;
+  --color-bg-elevated: #FFFFFF;
+  --color-surface: #F7F5F0;
+  --color-surface-raised: #EDEAE3;
+  --color-border: rgba(154, 122, 60, 0.15);
+  --color-border-strong: rgba(154, 122, 60, 0.30);
+
+  --color-text: #0D1210;
+  --color-text-secondary: #3F4A46;
+  --color-text-tertiary: #6B7570;
+  --color-text-inverse: #FFFFFF;
+
+  --glass-bg: rgba(247, 245, 240, 0.78);
+  --glass-bg-strong: rgba(247, 245, 240, 0.92);
+  --glass-border: 1px solid var(--gold-whisper);
+}

@@ -1,0 +1,153 @@
+// src/store/uiStore.js
+import { create } from 'zustand';
+
+const getPreferredTheme = () => {
+  try {
+    return localStorage.getItem('ecospark-theme') || 'regalia';
+  } catch { return 'regalia'; }
+};
+
+const getPreferredMotion = () => {
+  try {
+    if (localStorage.getItem('ecospark-reduced-motion') === 'true') return true;
+    return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false;
+  } catch { return false; }
+};
+
+export const THEMES = [
+  { id: 'regalia-noir', label: 'Regalia Noir', group: 'regalia' },
+  { id: 'regalia-light', label: 'Regalia Light', group: 'regalia' },
+  { id: 'midnight', label: 'Midnight', group: 'classic' },
+  { id: 'metallic', label: 'Metallic', group: 'classic' },
+];
+
+export const TEXT_SIZES = [
+  { id: 'default', label: 'Default' },
+  { id: 'large', label: 'Large' },
+  { id: 'larger', label: 'Larger' },
+];
+
+export const CONTRASTS = [
+  { id: 'default', label: 'Default' },
+  { id: 'high', label: 'High' },
+  { id: 'golden', label: 'Golden' },
+];
+
+export const useUiStore = create((set, get) => ({
+  // AI Coach
+  coachOpen: false,
+  coachMessages: [
+    {
+      role: 'assistant',
+      content: "Hi! I'm your EcoSpark AI Coach 🌱 I can help you with eco tips, explain tasks, or motivate your streak. What's on your mind?",
+    },
+  ],
+  coachHasNewTip: false,
+
+  // Theme & Accessibility
+  activeTheme: getPreferredTheme(),
+  reducedMotion: getPreferredMotion(),
+  textSize: localStorage.getItem('ecospark-text-size') || 'normal',
+  highContrast: localStorage.getItem('ecospark-high-contrast') === 'true',
+  themeContrast: localStorage.getItem('ecospark-theme-contrast') || 'default',
+
+  // Notifications
+  notifications: [],
+  unreadCount: 0,
+
+  // Actions
+  toggleCoach: () => set((s) => ({ coachOpen: !s.coachOpen, coachHasNewTip: false })),
+  openCoach: () => set({ coachOpen: true, coachHasNewTip: false }),
+  closeCoach: () => set({ coachOpen: false }),
+
+  // Appearance Actions
+  setTheme: (themeId) => {
+    localStorage.setItem('ecospark-theme', themeId);
+    document.documentElement.dataset.theme = themeId;
+    set({ activeTheme: themeId });
+  },
+  setTextSize: (sizeId) => {
+    localStorage.setItem('ecospark-text-size', sizeId);
+    document.documentElement.dataset.textSize = sizeId;
+    set({ textSize: sizeId });
+  },
+  setContrast: (contrastId) => {
+    localStorage.setItem('ecospark-high-contrast', contrastId === 'high' ? 'true' : 'false');
+    if (contrastId === 'high') {
+      document.documentElement.dataset.contrast = 'high';
+    } else {
+      delete document.documentElement.dataset.contrast;
+    }
+    set({ highContrast: contrastId === 'high' });
+  },
+  setThemeContrast: (contrastId) => {
+    localStorage.setItem('ecospark-theme-contrast', contrastId);
+    if (contrastId !== 'default') {
+      document.documentElement.dataset.themeContrast = contrastId;
+    } else {
+      delete document.documentElement.dataset.themeContrast;
+    }
+    set({ themeContrast: contrastId });
+  },
+
+  appendCoachMessage: (message) =>
+    set((s) => ({ coachMessages: [...s.coachMessages, message] })),
+
+  updateLastCoachMessage: (content) =>
+    set((s) => {
+      const msgs = [...s.coachMessages];
+      if (msgs.length > 0) msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content };
+      return { coachMessages: msgs };
+    }),
+
+  setCoachHasNewTip: (val) => set({ coachHasNewTip: val }),
+
+  clearCoachHistory: () =>
+    set({
+      coachMessages: [
+        {
+          role: 'assistant',
+          content: "Hi! I'm your EcoSpark AI Coach 🌱 How can I help you today?",
+        },
+      ],
+    }),
+
+  setTheme: (theme) => {
+    localStorage.setItem('ecospark-theme', theme);
+    // Map theme name to data-theme attribute value.
+    // A theme missing from this map falls through to its raw name, which only
+    // works by coincidence — register new themes here explicitly.
+    const attrMap = {
+      forest: '',
+      ocean: 'ocean',
+      dark: 'dark',
+      midnight: 'midnight',
+      sunset: 'sunset',
+      metallic: 'metallic',
+      regalia: 'regalia',
+    };
+    document.documentElement.setAttribute('data-theme', attrMap[theme] ?? theme);
+    set({ activeTheme: theme });
+  },
+
+  setReducedMotion: (val) => {
+    localStorage.setItem('ecospark-reduced-motion', val);
+    document.documentElement.setAttribute('data-reduced-motion', val);
+    set({ reducedMotion: val });
+  },
+
+  setTextSize: (size) => {
+    localStorage.setItem('ecospark-text-size', size);
+    document.documentElement.setAttribute('data-text-size', size === 'normal' ? '' : size);
+    set({ textSize: size });
+  },
+
+  setHighContrast: (val) => {
+    localStorage.setItem('ecospark-high-contrast', val);
+    document.documentElement.setAttribute('data-contrast', val ? 'high' : '');
+    set({ highContrast: val });
+  },
+
+  setNotifications: (notifications) =>
+    set({ notifications, unreadCount: notifications.filter((n) => !n.read).length }),
+}));

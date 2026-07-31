@@ -1,0 +1,386 @@
+/* src/styles/rewards.css */
+
+/* ============================================================
+   ULTRA REWARDS - NAME GLOWS
+   ============================================================ */
+.glow-emerald {
+  color: #10B981;
+  font-weight: bold;
+  animation: emerald-pulse 1.5s infinite alternate;
+  display: inline-block;
+}
+
+@keyframes emerald-pulse {
+  0% {
+    text-shadow: 0 0 10px rgba(16, 185, 129, 0.8), 0 0 20px rgba(16, 185, 129, 0.5), 0 0 30px rgba(16, 185, 129, 0.3);
+    transform: scale(1);
+  }
+  100% {
+    text-shadow: 0 0 15px rgba(16, 185, 129, 1), 0 0 30px rgba(16, 185, 129, 0.8), 0 0 45px rgba(16, 185, 129, 0.6);
+    transform: scale(1.05);
+  }
+}
+
+.glow-aurora {
+  background: linear-gradient(90deg, #10B981, #3B82F6, #8B5CF6, #EC4899, #10B981);
+  background-size: 300% auto;
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: aurora-shift 2.5s linear infinite;
+  text-shadow: 0 0 15px rgba(59, 130, 246, 0.8), 0 0 25px rgba(139, 92, 246, 0.6);
+  font-weight: bold;
+  display: inline-block;
+}
+
+@keyframes aurora-shift {
+  0% { 
+    background-position: 0% center; 
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+  100% { 
+    background-position: 300% center; 
+    transform: translateY(0);
+  }
+}
+
+.glow-goldfoil {
+  background: linear-gradient(135deg, #FCD34D, #F59E0B, #FFF, #B45309, #FCD34D);
+  background-size: 300% auto;
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: gold-shimmer 2s linear infinite;
+  text-shadow: 0 0 15px rgba(245, 158, 11, 1), 0 0 25px rgba(245, 158, 11, 0.6);
+  font-weight: bold;
+  display: inline-block;
+}
+
+@keyframes gold-shimmer {
+  0% { 
+    background-position: 0% center;
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(1deg);
+  }
+  75% {
+    transform: rotate(-1deg);
+  }
+  100% { 
+    background-position: -300% center;
+    transform: rotate(0deg);
+  }
+}
+
+.glow-glitch {
+  color: #fff;
+  text-shadow: 3px 0 0 #ff00c1, -3px 0 0 #00fff9, 0 0 15px rgba(255, 255, 255, 0.8);
+  font-weight: bold;
+  animation: glitch-anim 2s infinite linear alternate-reverse;
+}
+
+@keyframes glitch-anim {
+  0% { text-shadow: 2px 0 0 #ff00c1, -2px 0 0 #00fff9; }
+  10% { text-shadow: -2px 0 0 #ff00c1, 2px 0 0 #00fff9; }
+  20% { text-shadow: 2px 0 0 #ff00c1, -2px 0 0 #00fff9; }
+  30% { text-shadow: -2px 0 0 #ff00c1, 2px 0 0 #00fff9; }
+  40% { text-shadow: 2px 0 0 #ff00c1, -2px 0 0 #00fff9; }
+  50% { text-shadow: -2px 0 0 #ff00c1, 2px 0 0 #00fff9; }
+  60% { text-shadow: 2px 0 0 #ff00c1, -2px 0 0 #00fff9; }
+  70% { text-shadow: 2px 0 0 #ff00c1, -2px 0 0 #00fff9; }
+  80% { text-shadow: -2px 0 0 #ff00c1, 2px 0 0 #00fff9; }
+  90% { text-shadow: 2px 0 0 #ff00c1, -2px 0 0 #00fff9; }
+  100% { text-shadow: -2px 0 0 #ff00c1, 2px 0 0 #00fff9; }
+}
+
+/* ============================================================
+   ULTRA REWARDS - PROFILE BACKGROUNDS
+   ============================================================ */
+.bg-royalvelvet {
+  background: radial-gradient(circle at 30% 30%, #581c87, #4c1d95),
+              radial-gradient(circle at 70% 70%, #9f1239, #7f1d1d) !important;
+  background-size: 200% 200%;
+  position: relative;
+  overflow: hidden;
+  min-height: 100vh;
+  border-radius: 16px;
+  padding: 24px;
+  animation: velvet-shift 12s ease-in-out infinite alternate;
+}
+.bg-royalvelvet::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle at center, rgba(253, 224, 71, 0.15) 1px, transparent 1px);
+  background-size: 40px 40px;
+  animation: gold-dust 8s linear infinite;
+  pointer-events: none;
+}
+@keyframes velvet-shift {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 100% 100%; }
+}
+@keyframes gold-dust {
+  0% { transform: translateY(0) rotate(0deg); opacity: 0.5; }
+  50% { opacity: 1; }
+  100% { transform: translateY(-40px) rotate(5deg); opacity: 0.5; }
+}
+
+.bg-cosmicnebula {
+  background: radial-gradient(circle at 10% 20%, rgba(91, 33, 182, 0.8) 0%, transparent 40%),
+              radial-gradient(circle at 80% 80%, rgba(219, 39, 119, 0.8) 0%, transparent 40%),
+              radial-gradient(circle at 50% 50%, rgba(14, 165, 233, 0.5) 0%, transparent 60%),
+              #0f172a !important;
+  background-size: 150% 150%;
+  position: relative;
+  overflow: hidden;
+  min-height: 100vh;
+  border-radius: 16px;
+  padding: 24px;
+  animation: nebula-swirl 20s ease infinite;
+}
+.bg-cosmicnebula::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: 
+    radial-gradient(1px 1px at 20px 30px, #ffffff, rgba(0,0,0,0)),
+    radial-gradient(1px 1px at 40px 70px, #ffffff, rgba(0,0,0,0)),
+    radial-gradient(2px 2px at 90px 40px, #ffffff, rgba(0,0,0,0));
+  background-repeat: repeat;
+  background-size: 100px 100px;
+  animation: twinkle 4s infinite alternate;
+  pointer-events: none;
+}
+@keyframes nebula-swirl {
+  0% { background-position: 0% 0%; }
+  33% { background-position: 100% 0%; }
+  66% { background-position: 100% 100%; }
+  100% { background-position: 0% 0%; }
+}
+@keyframes twinkle {
+  0% { opacity: 0.3; }
+  100% { opacity: 1; }
+}
+
+.bg-neonmatrix {
+  background-color: #000 !important;
+  background-image: 
+    linear-gradient(rgba(0, 255, 0, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 0, 0.1) 1px, transparent 1px) !important;
+  background-size: 20px 20px;
+  animation: matrix-scroll 10s linear infinite;
+  min-height: 100vh;
+  border-radius: 16px;
+  padding: 24px;
+}
+@keyframes matrix-scroll {
+  from { background-position: 0 0; }
+  to { background-position: 0 200px; }
+}
+
+.bg-diamondglint {
+  background: linear-gradient(135deg, #1e293b 25%, transparent 25%) -50px 0,
+              linear-gradient(225deg, #334155 25%, transparent 25%) -50px 0,
+              linear-gradient(315deg, #1e293b 25%, transparent 25%),
+              linear-gradient(45deg, #334155 25%, transparent 25%),
+              #0f172a !important;
+  background-size: 100px 100px;
+  position: relative;
+  overflow: hidden;
+  min-height: 100vh;
+  border-radius: 16px;
+  padding: 24px;
+  animation: diamond-shift 15s linear infinite;
+}
+.bg-diamondglint::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, 0.1) 45%, rgba(255, 255, 255, 0.3) 50%, rgba(255, 255, 255, 0.1) 55%, transparent 60%);
+  background-size: 300% 100%;
+  animation: glint-flash 5s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes diamond-shift {
+  0% { background-position: 0 0, 0 0, 0 0, 0 0; }
+  100% { background-position: 100px 100px, 100px 100px, 100px 100px, 100px 100px; }
+}
+@keyframes glint-flash {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* ============================================================
+   ULTRA REWARDS - COMPANIONS
+   ============================================================ */
+.companion-wrapper {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  font-size: 1.5rem;
+  z-index: 10;
+  pointer-events: none;
+  animation: float-companion 3s ease-in-out infinite;
+}
+
+@keyframes float-companion {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-8px) rotate(5deg); }
+}
+
+/* ============================================================
+   ULTRA REWARDS — QUANTUM / MYTHIC / SINGULARITY GLOWS
+   ============================================================ */
+.glow-photon {
+  background: linear-gradient(90deg, #67E8F9, #FFFFFF, #22D3EE, #0891B2, #67E8F9);
+  background-size: 250% auto;
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: photon-stream 1.8s linear infinite;
+  text-shadow: 0 0 18px rgba(34, 211, 238, 0.9), 0 0 32px rgba(34, 211, 238, 0.5);
+  font-weight: bold;
+  display: inline-block;
+}
+@keyframes photon-stream {
+  0% { background-position: 0% center; }
+  100% { background-position: -250% center; }
+}
+
+.glow-chlorophyll {
+  background: linear-gradient(120deg, #14532D, #4ADE80, #ECFDF5, #22C55E, #14532D);
+  background-size: 300% auto;
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: chlorophyll-surge 3s ease-in-out infinite;
+  text-shadow: 0 0 16px rgba(74, 222, 128, 0.9), 0 0 30px rgba(74, 222, 128, 0.5);
+  font-weight: bold;
+  display: inline-block;
+}
+@keyframes chlorophyll-surge {
+  0%, 100% { background-position: 0% center; filter: brightness(1); }
+  50% { background-position: 150% center; filter: brightness(1.35); }
+}
+
+.glow-eventbloom {
+  background: linear-gradient(90deg, #F0ABFC, #34D399, #A78BFA, #F0ABFC);
+  background-size: 280% auto;
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: event-bloom 2.6s ease-in-out infinite;
+  text-shadow: 0 0 20px rgba(240, 171, 252, 0.9), 0 0 40px rgba(52, 211, 153, 0.5);
+  font-weight: bold;
+  display: inline-block;
+}
+@keyframes event-bloom {
+  0%, 100% { background-position: 0% center; letter-spacing: 0; transform: scale(1); }
+  50% { background-position: 200% center; letter-spacing: 1.5px; transform: scale(1.04); }
+}
+
+/* ============================================================
+   ULTRA REWARDS — QUANTUM / MYTHIC / SINGULARITY BACKGROUNDS
+   ============================================================ */
+.bg-solargrid {
+  background-color: #071B2B !important;
+  background-image:
+    linear-gradient(rgba(34, 211, 238, 0.12) 1.5px, transparent 1.5px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.12) 1.5px, transparent 1.5px),
+    radial-gradient(circle at 80% 15%, rgba(253, 224, 71, 0.22), transparent 45%) !important;
+  background-size: 46px 46px, 46px 46px, 100% 100%;
+  position: relative;
+  overflow: hidden;
+  min-height: 100vh;
+  border-radius: 16px;
+  padding: 24px;
+}
+.bg-solargrid::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 42%, rgba(253, 224, 71, 0.14) 48%, rgba(255, 255, 255, 0.22) 50%, rgba(253, 224, 71, 0.14) 52%, transparent 58%);
+  background-size: 280% 100%;
+  animation: solar-sweep 6s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes solar-sweep {
+  0% { background-position: 120% 0; }
+  100% { background-position: -160% 0; }
+}
+
+.bg-terraform {
+  background: linear-gradient(180deg, #052E16 0%, #14532D 35%, #B45309 78%, #FDE047 120%) !important;
+  position: relative;
+  overflow: hidden;
+  min-height: 100vh;
+  border-radius: 16px;
+  padding: 24px;
+}
+.bg-terraform::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, transparent 0 26px, rgba(74, 222, 128, 0.09) 26px 28px);
+  animation: terraform-scan 8s linear infinite;
+  pointer-events: none;
+}
+.bg-terraform::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; height: 90px;
+  background: linear-gradient(180deg, transparent, rgba(74, 222, 128, 0.25), transparent);
+  animation: terraform-beam 5s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+@keyframes terraform-scan {
+  from { background-position: 0 0; }
+  to { background-position: 0 260px; }
+}
+@keyframes terraform-beam {
+  0% { top: -10%; opacity: 0.4; }
+  100% { top: 85%; opacity: 0.9; }
+}
+
+.bg-eventhorizon {
+  background: radial-gradient(circle at 50% 45%, #000000 0%, #1E1B4B 32%, #0F172A 70%) !important;
+  position: relative;
+  overflow: hidden;
+  min-height: 100vh;
+  border-radius: 16px;
+  padding: 24px;
+}
+.bg-eventhorizon::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 190%; height: 190%;
+  transform: translate(-50%, -50%);
+  background: conic-gradient(from 0deg,
+    transparent 0deg, rgba(52, 211, 153, 0.28) 40deg, transparent 90deg,
+    rgba(240, 171, 252, 0.24) 150deg, transparent 210deg,
+    rgba(167, 139, 250, 0.22) 280deg, transparent 340deg);
+  animation: horizon-swirl 14s linear infinite;
+  pointer-events: none;
+}
+.bg-eventhorizon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 25px 35px, #ffffff, rgba(0,0,0,0)),
+    radial-gradient(1.5px 1.5px at 70px 80px, #A7F3D0, rgba(0,0,0,0)),
+    radial-gradient(1px 1px at 110px 20px, #F0ABFC, rgba(0,0,0,0));
+  background-repeat: repeat;
+  background-size: 130px 130px;
+  animation: twinkle 4s infinite alternate;
+  pointer-events: none;
+}
+@keyframes horizon-swirl {
+  100% { transform: translate(-50%, -50%) rotate(360deg); }
+}

@@ -1,0 +1,69 @@
+/* src/components/layout/BottomTabBar.module.css */
+
+.tabBar {
+  display: flex;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--bottombar-height);
+  background: var(--bg-inset);
+  border-top: 1.5px solid rgba(245, 158, 11, 0.4); /* Bolder Golden Border for mobile navbar */
+  z-index: 200;
+  padding: 0 4px;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* Hidden on tablet and above */
+@media (min-width: 768px) {
+  .tabBar {
+    display: none;
+  }
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  text-decoration: none;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-body);
+  padding: 8px 4px;
+  position: relative;
+  transition: color var(--transition-micro);
+  border-radius: var(--radius-sm);
+}
+
+.tab:hover {
+  color: var(--color-primary);
+}
+
+.active {
+  color: var(--color-primary) !important;
+}
+
+.icon {
+  font-size: 20px;
+  line-height: 1;
+  position: relative;
+  z-index: 1;
+}
+
+.label {
+  font-size: 10px;
+  font-weight: var(--font-semibold);
+  line-height: 1;
+  position: relative;
+  z-index: 1;
+}
+
+.activePill {
+  position: absolute;
+  inset: 4px;
+  background: var(--bg-overlay);
+  border-radius: var(--radius-sm);
+  z-index: 0;
+}

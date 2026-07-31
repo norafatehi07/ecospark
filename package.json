@@ -1,0 +1,41 @@
+{
+  "name": "ecospark",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "seed": "node scripts/seed.js",
+    "set-owner": "node scripts/set-owner.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
+    "@react-three/postprocessing": "^3.0.4",
+    "@tailwindcss/vite": "^4.3.3",
+    "dotenv": "^17.4.2",
+    "firebase": "^12.16.0",
+    "firebase-admin": "^13.10.0",
+    "framer-motion": "^12.42.2",
+    "groq-sdk": "^1.3.0",
+    "jimp": "^1.6.1",
+    "lucide-react": "^1.25.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-hot-toast": "^2.6.0",
+    "react-intersection-observer": "^10.1.0",
+    "react-router-dom": "^7.18.1",
+    "recharts": "^3.10.0",
+    "tailwindcss": "^4.3.3",
+    "three": "^0.185.1",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "vite": "^8.1.4"
+  }
+}

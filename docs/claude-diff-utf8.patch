@@ -1,0 +1,2542 @@
+﻿diff --git a/api/verify.js b/api/verify.js
+index af0b14e..1cc532c 100644
+--- a/api/verify.js
++++ b/api/verify.js
+@@ -1,19 +1,12 @@
+ // api/verify.js ΓÇö Gemini Vision photo verification (async)
++//
++// Caller must present a verified Firebase ID token, and may only verify their
++// own submission. Image and verification criteria are read from stored
++// documents, never from the request body ΓÇö see audit finding A-4.
+ import { GoogleGenerativeAI } from '@google/generative-ai';
+-import admin from 'firebase-admin';
+-
+-// Initialize Firebase Admin (use service account in production)
+-if (!admin.apps.length) {
+-  admin.initializeApp({
+-    credential: admin.credential.cert({
+-      projectId: process.env.FIREBASE_PROJECT_ID,
+-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+-    }),
+-  });
+-}
++import { db, FieldValue } from './_lib/firebaseAdmin.js';
++import { requireUser } from './_lib/auth.js';
+ 
+-const db = admin.firestore();
+ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+ 
+ async function fetchImageAsBase64(url) {
+@@ -83,21 +76,71 @@ async function callGeminiWithRetry(imagePart, prompt, maxRetries = 2) {
+ 
+ export default async function handler(req, res) {
+   if (req.method !== 'POST') {
++    res.setHeader('Allow', 'POST');
+     return res.status(405).json({ error: 'Method not allowed' });
+   }
+ 
+-  const { submissionId, imageUrl, taskPrompt } = req.body;
++  // ΓöÇΓöÇ Caller authentication (audit finding A-4) ΓöÇΓöÇ
++  // This endpoint writes submission status with Admin SDK privileges. Without
++  // a caller check, anyone could mark any submission approved by posting its
++  // id ΓÇö and, because the prompt used to come from the request body, could
++  // also choose the criteria it was judged against.
++  let caller;
++  try {
++    caller = await requireUser(req);
++  } catch (err) {
++    return res.status(err.status || 401).json({ error: err.publicMessage || 'Sign in to continue.' });
++  }
+ 
+-  if (!submissionId || !imageUrl || !taskPrompt) {
+-    return res.status(400).json({ error: 'submissionId, imageUrl, and taskPrompt required' });
++  const { submissionId } = req.body || {};
++  if (!submissionId) {
++    return res.status(400).json({ error: 'submissionId is required' });
+   }
+ 
+-  const submissionRef = db.collection('submissions').doc(submissionId);
++  const submissionRef = db.collection('submissions').doc(String(submissionId));
++  const submissionSnap = await submissionRef.get();
++  if (!submissionSnap.exists) {
++    return res.status(404).json({ error: 'Submission not found' });
++  }
++  const submission = submissionSnap.data();
+ 
+-  try {
+-    // Ensure doc exists with pending status
+-    await submissionRef.set({ status: 'pending', updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
++  // Only the author may trigger verification of their own submission; staff may
++  // re-run one that was flagged for review.
++  const isAuthor = submission.userId === caller.uid;
++  if (!isAuthor && !caller.isStaff) {
++    return res.status(403).json({ error: 'That submission is not yours.' });
++  }
+ 
++  // Verification runs once. Re-running a decided submission is how a rejection
++  // would otherwise be retried until it passed.
++  const rerunnable = caller.isStaff && submission.status === 'flagged';
++  if (submission.status !== 'pending' && !rerunnable) {
++    return res.status(409).json({
++      error: 'This submission has already been reviewed.',
++      status: submission.status,
++    });
++  }
++
++  // Image and criteria come from stored data, never from the request body.
++  const imageUrl = submission.imageUrl;
++  if (!imageUrl) {
++    return res.status(400).json({ error: 'This submission has no photo attached.' });
++  }
++
++  let taskPrompt = submission.verificationPrompt || null;
++  if (submission.taskId) {
++    const taskSnap = await db.collection('tasks').doc(String(submission.taskId)).get();
++    if (taskSnap.exists) {
++      const task = taskSnap.data();
++      // The catalog task is the authoritative source when it exists.
++      taskPrompt = task.verificationPrompt || task.description || taskPrompt;
++    }
++  }
++  if (!taskPrompt) {
++    return res.status(400).json({ error: 'This task has no verification criteria.' });
++  }
++
++  try {
+     const imagePart = await fetchImageAsBase64(imageUrl);
+     const verificationPrompt = `You are verifying a student's eco-action photo submission for a sustainability app.
+ 
+@@ -138,9 +181,9 @@ Respond with a confidence score where:
+       confidence,
+       reason: result.reason,
+       needsAudit: confidence >= 0.3 && confidence < 0.5,
+-      approvedAt: status === 'approved' ? admin.firestore.FieldValue.serverTimestamp() : null,
+-      flaggedAt: status === 'flagged' ? admin.firestore.FieldValue.serverTimestamp() : null,
+-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
++      approvedAt: status === 'approved' ? FieldValue.serverTimestamp() : null,
++      flaggedAt: status === 'flagged' ? FieldValue.serverTimestamp() : null,
++      updatedAt: FieldValue.serverTimestamp(),
+     });
+ 
+     return res.status(200).json({ submissionId, status, reason: result.reason, confidence });
+@@ -158,8 +201,8 @@ Respond with a confidence score where:
+         ? 'Verification timed out ΓÇö flagged for manual review'
+         : `Verification error: ${err.message}`,
+       error: err.message,
+-      flaggedAt: admin.firestore.FieldValue.serverTimestamp(),
+-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
++      flaggedAt: FieldValue.serverTimestamp(),
++      updatedAt: FieldValue.serverTimestamp(),
+     });
+ 
+     return res.status(500).json({ error: 'Verification failed', details: err.message });
+diff --git a/firestore.rules b/firestore.rules
+index f788c2c..6190c9f 100644
+--- a/firestore.rules
++++ b/firestore.rules
+@@ -1,76 +1,175 @@
+ rules_version = '2';
+ 
++// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
++// EcoSpark Firestore security rules
++//
++// Governing principle: the client may never write anything of value. Points,
++// roles, bans and inventory are mutated only by the trusted serverless functions
++// in api/ (Admin SDK, which bypasses these rules by design). What remains here
++// is the boundary for everything the browser is still allowed to touch.
++//
++// Verify with the emulator before deploying:
++//   firebase emulators:start --only firestore
++// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
++
+ service cloud.firestore {
+   match /databases/{database}/documents {
+ 
+-    // Helper functions
++    // ΓöÇΓöÇ Helpers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+     function isAuthenticated() {
+       return request.auth != null;
+     }
+ 
+-    function isOwner(userId) {
+-      return request.auth.uid == userId;
++    function isSelf(userId) {
++      return isAuthenticated() && request.auth.uid == userId;
++    }
++
++    function userDoc() {
++      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
++    }
++
++    // Custom claims are authoritative: they can only be set with the Admin SDK,
++    // whereas the Firestore `role` field is just another document. The mirror is
++    // kept as a fallback for accounts provisioned before claims existed.
++    function claimRole() {
++      return request.auth.token.role;
++    }
++
++    function isOwner() {
++      return isAuthenticated() && claimRole() == 'owner';
+     }
+ 
+-    function isTeacher() {
++    function isAdmin() {
++      return isAuthenticated() && (claimRole() == 'admin' || isOwner());
++    }
++
++    // Teachers and admins both moderate. Named for what it grants, unlike the
++    // previous isTeacher() which silently included admins too.
++    function isStaff() {
++      return isAuthenticated() && (
++        claimRole() in ['teacher', 'admin', 'owner'] ||
++        userDoc().role in ['teacher', 'admin', 'owner']
++      );
++    }
++
++    // Fields the client must never author. Anything that represents value,
++    // permission, or moderation state.
++    function touchesProtectedFields() {
++      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
++        'points', 'spendableBalance', 'lifetimePoints', 'weeklyPoints',
++        'role', 'banned', 'inventory', 'unlockedFrames', 'equipped',
++        'activeFrame', 'streak', 'longestStreak', 'lastActivityDate',
++        'badges', 'totalTasksCompleted', 'totalCO2Saved', 'totalWaterSaved',
++        'totalWasteSaved', 'referralCount', 'referredBy', 'referralCode',
++        'arenaBets', 'arenaStakes', 'followersCount', 'followingCount'
++      ]);
++    }
++
++    function isChatParticipant(chatId) {
+       return isAuthenticated() &&
+-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['teacher', 'admin'];
++        request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+     }
+ 
+     // ΓöÇΓöÇ USERS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // Previously `allow update: if isAuthenticated()`, which let any signed-in
++    // user rewrite any other user's points, role and inventory.
+     match /users/{userId} {
+       allow read: if isAuthenticated();
+-      allow create: if isOwner(userId);
+-      allow update: if isAuthenticated();
+-      allow delete: if isOwner(userId);
++      allow create: if isSelf(userId);
++
++      // You may edit your own profile, but only the harmless parts: display
++      // name, photo, preferences, privacy toggles, blocklist.
++      allow update: if isSelf(userId) && !touchesProtectedFields();
++
++      // Deletion would orphan ledger entries and leaderboard rows.
++      allow delete: if false;
++    }
++
++    // ΓöÇΓöÇ POINT LEDGER (append-only, server-written) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    match /pointTransactions/{entryId} {
++      allow read: if isAuthenticated() &&
++        (resource.data.userId == request.auth.uid || isStaff());
++      // Written exclusively by the Admin SDK.
++      allow write: if false;
+     }
+ 
+-    // ΓöÇΓöÇ TASKS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // ΓöÇΓöÇ AUDIT LOG (owner-readable, server-written) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    match /auditLog/{entryId} {
++      allow read: if isOwner();
++      allow write: if false;
++    }
++
++    // ΓöÇΓöÇ TASKS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+     match /tasks/{taskId} {
+       allow read: if isAuthenticated();
+-      allow write: if isTeacher();
++      allow write: if isStaff();
+     }
+ 
+     // ΓöÇΓöÇ SUBMISSIONS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+     match /submissions/{submissionId} {
+       allow read: if isAuthenticated() &&
+-        (resource.data.userId == request.auth.uid || isTeacher());
++        (resource.data.userId == request.auth.uid || isStaff());
++
++      // A student may submit their own work, but must not pre-set the verdict
++      // or the payout ΓÇö those come from verification and the task definition.
+       allow create: if isAuthenticated() &&
+-        request.resource.data.userId == request.auth.uid;
+-      // Updates come from server-side only (verify serverless function)
+-      allow update: if isAuthenticated() &&
+-        (resource.data.userId == request.auth.uid || isTeacher());
+-      allow delete: if isTeacher();
++        request.resource.data.userId == request.auth.uid &&
++        request.resource.data.status == 'pending';
++
++      // Status transitions belong to the verifier and to staff review.
++      allow update: if isStaff();
++      allow delete: if isStaff();
+     }
+ 
+-    // ΓöÇΓöÇ LEADERBOARD (public read, server-side write) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // ΓöÇΓöÇ LEADERBOARD (public read, server-written) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // Was writable by the row's owner, which meant points could be forged here
++    // even once /users was locked.
+     match /leaderboard/{userId} {
+       allow read: if isAuthenticated();
+-      allow write: if isOwner(userId) || isTeacher(); // Also updated by awardPointsAndUpdateStreak transaction
++      allow write: if false;
+     }
+ 
+-    // ΓöÇΓöÇ REWARDS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // ΓöÇΓöÇ REWARDS CATALOG ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+     match /rewards/{rewardId} {
+       allow read: if isAuthenticated();
+-      allow write: if isTeacher();
++      allow write: if isStaff();
+     }
+ 
+-    // ΓöÇΓöÇ REDEMPTIONS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // ΓöÇΓöÇ REDEMPTIONS / TRANSACTIONS (server-written) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+     match /redemptions/{redemptionId} {
+       allow read: if isAuthenticated() &&
+-        resource.data.userId == request.auth.uid;
+-      allow create: if isAuthenticated() &&
+-        request.resource.data.userId == request.auth.uid;
+-      allow update, delete: if false;
++        (resource.data.userId == request.auth.uid || isStaff());
++      allow write: if false;
+     }
+ 
+-    // ΓöÇΓöÇ TRANSACTIONS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+     match /transactions/{transactionId} {
+       allow read: if isAuthenticated() &&
+-        (resource.data.userId == request.auth.uid || isTeacher());
+-      allow create: if isAuthenticated() &&
+-        (request.resource.data.userId == request.auth.uid || isTeacher() || request.resource.data.type == 'earned');
+-      allow update, delete: if isTeacher();
++        (resource.data.userId == request.auth.uid || isStaff());
++      allow write: if false;
++    }
++
++    // ΓöÇΓöÇ ARENA (server-written) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    match /oracleBets/{betId} {
++      allow read: if isAuthenticated() &&
++        (resource.data.userId == request.auth.uid || isStaff());
++      allow write: if false;
++    }
++
++    match /growthPoolStakes/{stakeId} {
++      allow read: if isAuthenticated() &&
++        (resource.data.userId == request.auth.uid || isStaff());
++      allow write: if false;
++    }
++
++    match /arenaTriviaSessions/{sessionId} {
++      allow read: if isAuthenticated() &&
++        (resource.data.userId == request.auth.uid || isStaff());
++      allow write: if false;
++    }
++
++    match /oracleQuestions/{questionId} {
++      allow read: if isAuthenticated();
++      allow write: if isStaff();
+     }
+ 
+     // ΓöÇΓöÇ COMMUNITY POSTS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+@@ -78,74 +177,114 @@ service cloud.firestore {
+       allow read: if isAuthenticated();
+       allow create: if isAuthenticated() &&
+         request.resource.data.userId == request.auth.uid;
+-      allow update: if isAuthenticated() &&
+-        (resource.data.userId == request.auth.uid ||
+-         // Allow any authenticated user to update likes and commentCount
+-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']) ||
+-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount']) ||
+-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'commentCount']));
++
++      // Author may edit their own post; anyone may toggle a like or bump the
++      // comment count, and nothing else.
++      allow update: if isAuthenticated() && (
++        resource.data.userId == request.auth.uid ||
++        request.resource.data.diff(resource.data).affectedKeys()
++          .hasOnly(['likes', 'commentCount', 'reactions'])
++      );
+       allow delete: if isAuthenticated() &&
+-        (resource.data.userId == request.auth.uid || isTeacher());
+-        
++        (resource.data.userId == request.auth.uid || isStaff());
++
+       match /comments/{commentId} {
+         allow read: if isAuthenticated();
+-        allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+-        allow update, delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isTeacher());
++        allow create: if isAuthenticated() &&
++          request.resource.data.userId == request.auth.uid;
++        allow update, delete: if isAuthenticated() &&
++          (resource.data.userId == request.auth.uid || isStaff());
+       }
+     }
+ 
+-    // ΓöÇΓöÇ GROUPS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // ΓöÇΓöÇ GROUPS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+     match /groups/{groupId} {
+       allow read: if isAuthenticated();
+-      allow create: if isAuthenticated();
+-      allow update: if isAuthenticated() &&
+-        (resource.data.creatorId == request.auth.uid ||
+-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'totalPoints']));
+-      allow delete: if false;
++      allow create: if isAuthenticated() &&
++        request.resource.data.creatorId == request.auth.uid;
++      allow update: if isAuthenticated() && (
++        resource.data.creatorId == request.auth.uid ||
++        // Joining/leaving only. totalPoints is server-maintained.
++        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
++      );
++      allow delete: if isStaff();
+     }
+ 
+     // ΓöÇΓöÇ REPORTS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+     match /reports/{reportId} {
+-      allow read, update: if isTeacher();
+-      allow create: if isAuthenticated();
++      allow read, update: if isStaff();
++      allow create: if isAuthenticated() &&
++        request.resource.data.reporterId == request.auth.uid;
+       allow delete: if false;
+     }
+ 
+-    // ΓöÇΓöÇ NOTIFICATIONS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // ΓöÇΓöÇ NOTIFICATIONS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+     match /notifications/{notifId} {
+       allow read: if isAuthenticated() &&
+         resource.data.userId == request.auth.uid;
++      // Recipient may only flip `read`.
+       allow update: if isAuthenticated() &&
+         resource.data.userId == request.auth.uid &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+-      allow create: if isAuthenticated(); 
+-      allow delete: if false; // Server-side only
++      // Client-created notifications remain allowed so DM/follow alerts keep
++      // working; they carry no value and are addressed to a single recipient.
++      allow create: if isAuthenticated();
++      allow delete: if false;
+     }
+ 
+-    // ΓöÇΓöÇ FOLLOWS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // ΓöÇΓöÇ FOLLOWS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // Doc id is `${followerId}_${followingId}`; a user may only create the edge
++    // where they are the follower.
+     match /follows/{followId} {
+       allow read: if isAuthenticated();
+-      allow write: if isAuthenticated();
++      allow create: if isAuthenticated() &&
++        request.resource.data.followerId == request.auth.uid;
++      allow delete: if isAuthenticated() &&
++        resource.data.followerId == request.auth.uid;
++      allow update: if false;
+     }
+ 
+-    // ΓöÇΓöÇ SETTINGS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // ΓöÇΓöÇ SETTINGS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // Public read: the landing page and maintenance gate read this pre-auth.
+     match /settings/{docId} {
+       allow read: if true;
+-      allow write: if isTeacher();
++      allow write: if isAdmin();
+     }
+ 
+-    // ΓöÇΓöÇ FRAME REQUESTS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // ΓöÇΓöÇ FRAME REQUESTS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+     match /frameRequests/{requestId} {
+-      allow read, update, delete: if isTeacher();
+-      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId;
++      allow read, update, delete: if isStaff();
++      allow create: if isAuthenticated() &&
++        request.auth.uid == request.resource.data.userId;
+     }
+ 
+-    // ΓöÇΓöÇ CHATS & MESSAGES ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // ΓöÇΓöÇ CHATS & MESSAGES ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // Was `allow read, write: if isAuthenticated()` ΓÇö every conversation in the
++    // app was readable and writable by any signed-in account.
+     match /chats/{chatId} {
+-      allow read, write: if isAuthenticated();
+-      
++      allow read: if isAuthenticated() &&
++        request.auth.uid in resource.data.participants;
++      allow create: if isAuthenticated() &&
++        request.auth.uid in request.resource.data.participants &&
++        request.resource.data.participants.size() == 2;
++      // Participants may update conversation metadata (lastMessage, unreadBy).
++      allow update: if isAuthenticated() &&
++        request.auth.uid in resource.data.participants &&
++        request.resource.data.participants == resource.data.participants;
++      allow delete: if false;
++
+       match /messages/{messageId} {
+-        allow read, write: if isAuthenticated();
++        allow read: if isChatParticipant(chatId);
++        // You may only send as yourself, and only into a chat you are in.
++        allow create: if isChatParticipant(chatId) &&
++          request.resource.data.senderId == request.auth.uid;
++        // Editing is limited to reactions and read receipts; message text is
++        // immutable so history cannot be rewritten after the fact.
++        allow update: if isChatParticipant(chatId) &&
++          request.resource.data.diff(resource.data).affectedKeys()
++            .hasOnly(['reactions', 'readBy', 'editedAt', 'deleted']);
++        allow delete: if isAuthenticated() &&
++          resource.data.senderId == request.auth.uid;
+       }
+     }
+   }
+diff --git a/index.html b/index.html
+index 1c15eab..e889af4 100644
+--- a/index.html
++++ b/index.html
+@@ -7,13 +7,19 @@
+   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+   <meta name="description"
+     content="EcoSpark ΓÇö Gamified sustainability habit tracker for students. Earn points, track eco-streaks, and compete with classmates while making a real environmental impact." />
+-  <meta name="theme-color" content="#2E7D32" />
++  <meta name="theme-color" content="#0A0F0C" />
+   <title>EcoSpark</title>
+   <link rel="preconnect" href="https://fonts.googleapis.com" />
+   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+   <link
+     href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=Barlow:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&display=swap"
+     rel="stylesheet" />
++  <!-- Fraunces (ceremonial serif) is requested separately so a change here can
++       never break the workhorse font request above. Only the weights actually
++       used by hero / tier-reveal titles are loaded. -->
++  <link
++    href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&display=swap"
++    rel="stylesheet" />
+ </head>
+ 
+ <body>
+diff --git a/package.json b/package.json
+index 6f99bd5..43df92b 100644
+--- a/package.json
++++ b/package.json
+@@ -7,7 +7,8 @@
+     "dev": "vite",
+     "build": "vite build",
+     "preview": "vite preview",
+-    "seed": "node scripts/seed.js"
++    "seed": "node scripts/seed.js",
++    "set-owner": "node scripts/set-owner.js"
+   },
+   "dependencies": {
+     "@google/generative-ai": "^0.24.1",
+diff --git a/src/App.jsx b/src/App.jsx
+index 8f09ada..33fc628 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -10,6 +10,7 @@ import { useSettingsStore } from './store/settingsStore';
+ 
+ import AppShell from './components/layout/AppShell';
+ import ProtectedRoute from './components/common/ProtectedRoute';
++import { RingSpinner } from './components/common/GrowthRings';
+ 
+ // Pages (lazy-loaded)
+ const Home = React.lazy(() => import('./pages/Home'));
+@@ -74,6 +75,9 @@ function LoadingScreen() {
+       <p style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}>
+         Loading experience...
+       </p>
++      {/* Ring pulse rather than a generic spinner ΓÇö the Regalia motif, and the
++          only ornament on this screen. */}
++      <RingSpinner size={36} color="var(--color-primary)" label="Loading EcoSpark" />
+     </div>
+   );
+ }
+@@ -114,7 +118,9 @@ export default function App() {
+ 
+   // Apply saved preferences on mount
+   useEffect(() => {
+-    const theme = localStorage.getItem('ecospark-theme') || 'metallic';
++    // Regalia is the flagship default for new installs. Anyone who has already
++    // picked a theme keeps it ΓÇö this only changes the no-preference fallback.
++    const theme = localStorage.getItem('ecospark-theme') || 'regalia';
+     const reducedMotion = localStorage.getItem('ecospark-reduced-motion') === 'true'
+       || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+     const textSize = localStorage.getItem('ecospark-text-size') || 'normal';
+diff --git a/src/components/common/Frames.jsx b/src/components/common/Frames.jsx
+index d9bc209..c7bef02 100644
+--- a/src/components/common/Frames.jsx
++++ b/src/components/common/Frames.jsx
+@@ -703,3 +703,258 @@ export const PrimeFrame = () => (
+     </g>
+   </svg>
+ );
++
++// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
++// ≡ƒº½ BIO-CIRCUIT WEAVE ΓÇö Quantum Tier (75,000 pts)
++// Living circuitry grown from photosynthetic silicon. Data-sap flows through
++// glowing traces; hex lattices rotate; leaf-chips blink like status LEDs.
++// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
++export const BiocircuitFrame = () => (
++  <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
++    <SharedDefs />
++    <defs>
++      <linearGradient id="bio-ring" x1="0%" y1="0%" x2="100%" y2="100%">
++        <stop offset="0%" stopColor="#67E8F9" />
++        <stop offset="30%" stopColor="#22D3EE" />
++        <stop offset="55%" stopColor="#34D399" />
++        <stop offset="80%" stopColor="#A3E635" />
++        <stop offset="100%" stopColor="#0891B2" />
++      </linearGradient>
++      <radialGradient id="bio-aura" cx="50%" cy="50%" r="50%">
++        <stop offset="0%" stopColor="#22D3EE" stopOpacity=".45" />
++        <stop offset="60%" stopColor="#0E7490" stopOpacity=".2" />
++        <stop offset="100%" stopColor="#164E63" stopOpacity="0" />
++      </radialGradient>
++    </defs>
++    <style>{`
++      @keyframes bio-spin { 100% { transform: rotate(360deg); } }
++      @keyframes bio-rev { 100% { transform: rotate(-360deg); } }
++      @keyframes bio-pulse { 0%,100%{opacity:.35;transform:scale(1)} 50%{opacity:.95;transform:scale(1.08)} }
++      @keyframes bio-flow { 100% { stroke-dashoffset: -120; } }
++      @keyframes bio-blink { 0%,100%{opacity:.2} 50%{opacity:1} }
++      .bio-aura { transform-origin:50px 50px; animation: bio-pulse 3.5s ease-in-out infinite; }
++      .bio-o { transform-origin:50px 50px; animation: bio-spin 24s linear infinite; }
++      .bio-i { transform-origin:50px 50px; animation: bio-rev 16s linear infinite; }
++      .bio-flow { animation: bio-flow 3s linear infinite; }
++      .bio-b1 { animation: bio-blink 1.8s ease-in-out infinite; }
++      .bio-b2 { animation: bio-blink 1.8s ease-in-out infinite .45s; }
++      .bio-b3 { animation: bio-blink 1.8s ease-in-out infinite .9s; }
++      .bio-b4 { animation: bio-blink 1.8s ease-in-out infinite 1.35s; }
++    `}</style>
++    <g mask="url(#center-hole)">
++      {/* Breathing photonic aura */}
++      <circle cx="50" cy="50" r="49" fill="url(#bio-aura)" className="bio-aura" />
++      {/* Primary bio-metal ring */}
++      <circle cx="50" cy="50" r="42" fill="none" stroke="url(#bio-ring)" strokeWidth="7" filter="url(#glow-lg)" />
++      <circle cx="50" cy="50" r="46.5" fill="none" stroke="#22D3EE" strokeWidth=".8" opacity=".5" />
++      <circle cx="50" cy="50" r="37.5" fill="none" stroke="#A3E635" strokeWidth=".6" opacity=".4" />
++      {/* Flowing data-sap ring */}
++      <circle cx="50" cy="50" r="44.5" fill="none" stroke="#67E8F9" strokeWidth="1.4" strokeDasharray="5 15" className="bio-flow" filter="url(#glow-sm)" />
++      {/* Circuit traces at corners with flowing packets */}
++      <g stroke="#22D3EE" strokeWidth="1" fill="none" opacity=".9">
++        <path d="M 8 26 H 20 L 28 18 V 8" strokeDasharray="3 6" className="bio-flow" />
++        <path d="M 92 26 H 80 L 72 18 V 8" strokeDasharray="3 6" className="bio-flow" />
++        <path d="M 8 74 H 20 L 28 82 V 92" strokeDasharray="3 6" className="bio-flow" />
++        <path d="M 92 74 H 80 L 72 82 V 92" strokeDasharray="3 6" className="bio-flow" />
++      </g>
++      {/* Terminal nodes (status LEDs) */}
++      <circle cx="8" cy="26" r="2" fill="#67E8F9" filter="url(#glow-md)" className="bio-b1" />
++      <circle cx="92" cy="26" r="2" fill="#A3E635" filter="url(#glow-md)" className="bio-b2" />
++      <circle cx="8" cy="74" r="2" fill="#A3E635" filter="url(#glow-md)" className="bio-b3" />
++      <circle cx="92" cy="74" r="2" fill="#67E8F9" filter="url(#glow-md)" className="bio-b4" />
++      {/* Rotating hex lattices */}
++      <g className="bio-o">
++        <polygon points="50,4 89.8,27 89.8,73 50,96 10.2,73 10.2,27" fill="none" stroke="#22D3EE" strokeWidth=".9" strokeDasharray="4 3" opacity=".55" />
++      </g>
++      <g className="bio-i">
++        <polygon points="50,10 84.6,30 84.6,70 50,90 15.4,70 15.4,30" fill="none" stroke="#34D399" strokeWidth=".6" strokeDasharray="2 4" opacity=".5" />
++        <rect x="46.5" y="6.5" width="7" height="7" rx="1.5" fill="#0E7490" stroke="#67E8F9" strokeWidth=".7" />
++        <rect x="46.5" y="86.5" width="7" height="7" rx="1.5" fill="#0E7490" stroke="#A3E635" strokeWidth=".7" />
++      </g>
++      {/* Photosynthetic leaf-chip crest */}
++      <g filter="url(#glow-md)">
++        <path d="M 50 2 Q 58 8 50 16 Q 42 8 50 2 Z" fill="#34D399" stroke="#A7F3D0" strokeWidth=".7" />
++        <path d="M 50 4 V 14" stroke="#ECFDF5" strokeWidth=".6" opacity=".8" />
++      </g>
++      {/* Pulse sparks */}
++      <circle cx="50" cy="94" r="2.4" fill="#67E8F9" filter="url(#glow-lg)" className="bio-b2" />
++      <circle cx="6" cy="50" r="2" fill="#22D3EE" filter="url(#glow-md)" className="bio-b3" />
++      <circle cx="94" cy="50" r="2" fill="#A3E635" filter="url(#glow-md)" className="bio-b4" />
++    </g>
++  </svg>
++);
++
++// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
++// ≡ƒº¼ GENESIS HELIX ΓÇö Mythic Tier (120,000 pts)
++// Twin strands of terraforming light orbit the avatar ΓÇö the blueprint of a
++// reborn biosphere. Emerald-gold nucleotide orbs, floating DNA crest.
++// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
++export const HelixFrame = () => (
++  <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
++    <SharedDefs />
++    <defs>
++      <linearGradient id="hx-ring" x1="0%" y1="0%" x2="100%" y2="100%">
++        <stop offset="0%" stopColor="#BBF7D0" />
++        <stop offset="30%" stopColor="#4ADE80" />
++        <stop offset="55%" stopColor="#FDE047" />
++        <stop offset="80%" stopColor="#22C55E" />
++        <stop offset="100%" stopColor="#15803D" />
++      </linearGradient>
++      <radialGradient id="hx-aura" cx="50%" cy="50%" r="50%">
++        <stop offset="0%" stopColor="#4ADE80" stopOpacity=".5" />
++        <stop offset="60%" stopColor="#16A34A" stopOpacity=".22" />
++        <stop offset="100%" stopColor="#14532D" stopOpacity="0" />
++      </radialGradient>
++      <filter id="hx-glow" x="-80%" y="-80%" width="260%" height="260%">
++        <feGaussianBlur stdDeviation="12" result="blur" />
++        <feComposite in="SourceGraphic" in2="blur" operator="over" />
++      </filter>
++    </defs>
++    <style>{`
++      @keyframes hx-spin { 100% { transform: rotate(360deg); } }
++      @keyframes hx-rev { 100% { transform: rotate(-360deg); } }
++      @keyframes hx-pulse { 0%,100%{opacity:.4;transform:scale(1)} 50%{opacity:.95;transform:scale(1.1)} }
++      @keyframes hx-float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
++      @keyframes hx-tw { 0%,100%{opacity:0;transform:scale(.3)} 50%{opacity:1;transform:scale(1.4)} }
++      .hx-aura { transform-origin:50px 50px; animation: hx-pulse 4s ease-in-out infinite; }
++      .hx-a { transform-origin:50px 50px; animation: hx-spin 12s linear infinite; }
++      .hx-b { transform-origin:50px 50px; animation: hx-rev 12s linear infinite; }
++      .hx-rungs { transform-origin:50px 50px; animation: hx-spin 30s linear infinite; }
++      .hx-crest { transform-origin:50px 6px; animation: hx-float 3s ease-in-out infinite; }
++      .hx-t1 { transform-origin:center; animation: hx-tw 2.2s ease-in-out infinite; }
++      .hx-t2 { transform-origin:center; animation: hx-tw 2.2s ease-in-out infinite .55s; }
++      .hx-t3 { transform-origin:center; animation: hx-tw 2.2s ease-in-out infinite 1.1s; }
++      .hx-t4 { transform-origin:center; animation: hx-tw 2.2s ease-in-out infinite 1.65s; }
++    `}</style>
++    <g mask="url(#center-hole)">
++      {/* Biosphere aura */}
++      <circle cx="50" cy="50" r="49" fill="url(#hx-aura)" className="hx-aura" />
++      <circle cx="50" cy="50" r="49" fill="none" stroke="#4ADE80" strokeWidth="3" opacity=".22" filter="url(#hx-glow)" className="hx-aura" />
++      {/* Primary emerald-gold ring */}
++      <circle cx="50" cy="50" r="43" fill="none" stroke="url(#hx-ring)" strokeWidth="7" filter="url(#glow-lg)" />
++      <circle cx="50" cy="50" r="47" fill="none" stroke="#BBF7D0" strokeWidth=".9" opacity=".45" />
++      {/* Strand A ΓÇö terraforming light band */}
++      <g className="hx-a">
++        <ellipse cx="50" cy="50" rx="46" ry="15" fill="none" stroke="#4ADE80" strokeWidth="1.6" opacity=".8" filter="url(#glow-md)" transform="rotate(28 50 50)" />
++        <circle cx="96" cy="50" r="3" fill="#BBF7D0" filter="url(#glow-lg)" transform="rotate(28 50 50)" />
++        <circle cx="4" cy="50" r="3" fill="#4ADE80" filter="url(#glow-lg)" transform="rotate(28 50 50)" />
++      </g>
++      {/* Strand B ΓÇö counter-rotating golden band */}
++      <g className="hx-b">
++        <ellipse cx="50" cy="50" rx="46" ry="15" fill="none" stroke="#FDE047" strokeWidth="1.3" opacity=".7" filter="url(#glow-md)" transform="rotate(-28 50 50)" />
++        <circle cx="96" cy="50" r="2.6" fill="#FEF9C3" filter="url(#glow-lg)" transform="rotate(-28 50 50)" />
++        <circle cx="4" cy="50" r="2.6" fill="#FDE047" filter="url(#glow-lg)" transform="rotate(-28 50 50)" />
++      </g>
++      {/* Base-pair rungs */}
++      <g className="hx-rungs">
++        <circle cx="50" cy="50" r="45" fill="none" stroke="#86EFAC" strokeWidth="2.2" strokeDasharray="1.2 10" opacity=".7" />
++      </g>
++      {/* Floating DNA crest */}
++      <g className="hx-crest" filter="url(#glow-lg)">
++        <path d="M 42 -6 Q 50 0 58 -6" fill="none" stroke="#4ADE80" strokeWidth="1.6" />
++        <path d="M 42 6 Q 50 0 58 6" fill="none" stroke="#FDE047" strokeWidth="1.6" />
++        <path d="M 44 -3.5 L 56 3.5 M 44 3.5 L 56 -3.5 M 50 -1.5 V 1.5" stroke="#ECFDF5" strokeWidth=".7" opacity=".9" />
++        <circle cx="42" cy="-6" r="1.8" fill="#BBF7D0" />
++        <circle cx="58" cy="-6" r="1.8" fill="#FDE047" />
++        <circle cx="42" cy="6" r="1.8" fill="#FDE047" />
++        <circle cx="58" cy="6" r="1.8" fill="#BBF7D0" />
++      </g>
++      {/* Spore sparkles */}
++      <path d="M 18 20 L 19 25 L 24 26 L 19 27 L 18 32 L 17 27 L 12 26 L 17 25 Z" fill="#BBF7D0" filter="url(#glow-md)" className="hx-t1" />
++      <path d="M 82 20 L 83 25 L 88 26 L 83 27 L 82 32 L 81 27 L 76 26 L 81 25 Z" fill="#FDE047" filter="url(#glow-md)" className="hx-t2" />
++      <path d="M 18 70 L 19 75 L 24 76 L 19 77 L 18 82 L 17 77 L 12 76 L 17 75 Z" fill="#FDE047" filter="url(#glow-md)" className="hx-t3" />
++      <path d="M 82 70 L 83 75 L 88 76 L 83 77 L 82 82 L 81 77 L 76 76 L 81 75 Z" fill="#BBF7D0" filter="url(#glow-md)" className="hx-t4" />
++      {/* Root-system energy wave */}
++      <path d="M 12 82 Q 30 106 50 97 Q 70 106 88 82" fill="none" stroke="#4ADE80" strokeWidth="2" opacity=".65" filter="url(#glow-lg)" />
++      <path d="M 18 85 Q 34 102 50 95 Q 66 102 82 85" fill="none" stroke="#FDE047" strokeWidth="1" opacity=".5" filter="url(#glow-md)" />
++      <circle cx="50" cy="96" r="2.8" fill="#BBF7D0" filter="url(#glow-lg)" className="hx-t2" />
++    </g>
++  </svg>
++);
++
++// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
++// ≡ƒîî VERDANT SINGULARITY ΓÇö Singularity Tier (250,000 pts)
++// A collapsed star of pure life-energy. Emerald-fuchsia accretion disk,
++// photon ring flicker, matter spiralling inward, gravitational lens arcs.
++// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
++export const SingularityFrame = () => (
++  <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
++    <SharedDefs />
++    <defs>
++      <linearGradient id="sg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
++        <stop offset="0%" stopColor="#F0ABFC" />
++        <stop offset="30%" stopColor="#A21CAF" />
++        <stop offset="55%" stopColor="#34D399" />
++        <stop offset="80%" stopColor="#6D28D9" />
++        <stop offset="100%" stopColor="#F0ABFC" />
++      </linearGradient>
++      <radialGradient id="sg-aura" cx="50%" cy="50%" r="50%">
++        <stop offset="0%" stopColor="#2E1065" stopOpacity=".8" />
++        <stop offset="55%" stopColor="#A21CAF" stopOpacity=".3" />
++        <stop offset="100%" stopColor="#000000" stopOpacity="0" />
++      </radialGradient>
++      <filter id="sg-glow" x="-90%" y="-90%" width="280%" height="280%">
++        <feGaussianBlur stdDeviation="13" result="blur" />
++        <feComposite in="SourceGraphic" in2="blur" operator="over" />
++      </filter>
++    </defs>
++    <style>{`
++      @keyframes sg-fast { 100% { transform: rotate(360deg); } }
++      @keyframes sg-rev { 100% { transform: rotate(-360deg); } }
++      @keyframes sg-pulse { 0%,100%{opacity:.35;transform:scale(1)} 50%{opacity:.9;transform:scale(1.1)} }
++      @keyframes sg-flicker { 0%,100%{opacity:.35} 20%{opacity:1} 45%{opacity:.25} 70%{opacity:.85} }
++      @keyframes sg-fall { 0%{opacity:0;transform:scale(1) rotate(0deg)} 25%{opacity:1} 100%{opacity:0;transform:scale(.08) rotate(220deg)} }
++      @keyframes sg-tw { 0%,100%{opacity:0;transform:scale(.2)} 50%{opacity:1;transform:scale(1.6)} }
++      .sg-aura { transform-origin:50px 50px; animation: sg-pulse 3.8s ease-in-out infinite; }
++      .sg-d1 { transform-origin:50px 50px; animation: sg-fast 7s linear infinite; }
++      .sg-d2 { transform-origin:50px 50px; animation: sg-rev 12s linear infinite; }
++      .sg-d3 { transform-origin:50px 50px; animation: sg-fast 24s linear infinite; }
++      .sg-ph { animation: sg-flicker 2.4s ease-in-out infinite; }
++      .sg-f1 { transform-origin:50px 50px; animation: sg-fall 3.2s ease-in infinite; }
++      .sg-f2 { transform-origin:50px 50px; animation: sg-fall 3.2s ease-in infinite 1.1s; }
++      .sg-f3 { transform-origin:50px 50px; animation: sg-fall 3.2s ease-in infinite 2.2s; }
++      .sg-t1 { transform-origin:center; animation: sg-tw 2s ease-in-out infinite; }
++      .sg-t2 { transform-origin:center; animation: sg-tw 2s ease-in-out infinite .66s; }
++      .sg-t3 { transform-origin:center; animation: sg-tw 2s ease-in-out infinite 1.33s; }
++    `}</style>
++    <g mask="url(#center-hole)">
++      {/* Gravity-well aura */}
++      <circle cx="50" cy="50" r="49" fill="url(#sg-aura)" className="sg-aura" />
++      {/* Accretion disk ΓÇö three counter-rotating dashed rings */}
++      <g className="sg-d1">
++        <circle cx="50" cy="50" r="47" fill="none" stroke="#F0ABFC" strokeWidth="1.6" strokeDasharray="14 8" opacity=".75" filter="url(#glow-md)" />
++      </g>
++      <g className="sg-d2">
++        <circle cx="50" cy="50" r="44.5" fill="none" stroke="#34D399" strokeWidth="1.2" strokeDasharray="8 12" opacity=".65" filter="url(#glow-md)" />
++      </g>
++      <g className="sg-d3">
++        <circle cx="50" cy="50" r="48.5" fill="none" stroke="#A78BFA" strokeWidth=".7" strokeDasharray="3 9" opacity=".5" />
++      </g>
++      {/* Primary singularity ring */}
++      <circle cx="50" cy="50" r="42" fill="none" stroke="url(#sg-grad)" strokeWidth="6" filter="url(#sg-glow)" />
++      {/* Event horizon + photon ring */}
++      <circle cx="50" cy="50" r="37" fill="none" stroke="#0A0A0F" strokeWidth="3" opacity=".85" />
++      <circle cx="50" cy="50" r="38.6" fill="none" stroke="#F0ABFC" strokeWidth=".9" className="sg-ph" filter="url(#glow-md)" />
++      {/* Gravitational lens arcs */}
++      <path d="M 14 30 Q 50 12 86 30" fill="none" stroke="#E9D5FF" strokeWidth=".8" opacity=".5" filter="url(#glow-sm)" />
++      <path d="M 14 70 Q 50 88 86 70" fill="none" stroke="#A7F3D0" strokeWidth=".8" opacity=".5" filter="url(#glow-sm)" />
++      {/* Matter spiralling inward */}
++      <g className="sg-f1"><circle cx="18" cy="18" r="2.4" fill="#F0ABFC" filter="url(#glow-md)" /></g>
++      <g className="sg-f2"><circle cx="84" cy="26" r="2" fill="#34D399" filter="url(#glow-md)" /></g>
++      <g className="sg-f3"><circle cx="24" cy="82" r="2.2" fill="#A78BFA" filter="url(#glow-md)" /></g>
++      {/* Collapsed-star crest at top */}
++      <g filter="url(#sg-glow)">
++        <circle cx="50" cy="2" r="5" fill="#0A0A0F" stroke="#F0ABFC" strokeWidth="1.2" className="sg-ph" />
++        <path d="M 50 -8 V -4 M 50 8 V 12 M 40 2 H 44 M 56 2 H 60" stroke="#E9D5FF" strokeWidth=".9" opacity=".8" />
++        <circle cx="50" cy="2" r="2" fill="#34D399" className="sg-t2" />
++      </g>
++      {/* Bloom stars along the horizon */}
++      <path d="M 14 50 L 15 55 L 20 56 L 15 57 L 14 62 L 13 57 L 8 56 L 13 55 Z" fill="#F0ABFC" filter="url(#glow-lg)" className="sg-t1" />
++      <path d="M 86 50 L 87 55 L 92 56 L 87 57 L 86 62 L 85 57 L 80 56 L 85 55 Z" fill="#34D399" filter="url(#glow-lg)" className="sg-t2" />
++      <path d="M 50 86 L 51 91 L 56 92 L 51 93 L 50 98 L 49 93 L 44 92 L 49 91 Z" fill="#A78BFA" filter="url(#glow-lg)" className="sg-t3" />
++      {/* Bottom accretion wave */}
++      <path d="M 10 80 Q 30 108 50 99 Q 70 108 90 80" fill="none" stroke="#A21CAF" strokeWidth="2.2" opacity=".6" filter="url(#glow-lg)" />
++      <path d="M 16 83 Q 34 104 50 96 Q 66 104 84 83" fill="none" stroke="#34D399" strokeWidth="1" opacity=".5" filter="url(#glow-md)" />
++    </g>
++  </svg>
++);
+diff --git a/src/components/tasks/TaskLogModal.jsx b/src/components/tasks/TaskLogModal.jsx
+index e893b02..3a23ec9 100644
+--- a/src/components/tasks/TaskLogModal.jsx
++++ b/src/components/tasks/TaskLogModal.jsx
+@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from 'react';
+ import { motion, AnimatePresence } from 'framer-motion';
+ import { compressImageToBase64 } from '../../lib/imageUtils';
+ import { useAuthStore } from '../../store/authStore';
+-import { createSubmission, subscribeSubmission, awardPointsAndUpdateStreak } from '../../services/firestoreService';
++import { createSubmission, subscribeSubmission } from '../../services/firestoreService';
++import { awardTaskPoints } from '../../services/economyService';
+ import { verifyTaskPhoto } from '../../services/aiService';
+ import toast from 'react-hot-toast';
+ import PremiumIcon from '../common/PremiumIcon';
+@@ -68,6 +69,7 @@ export default function TaskLogModal({ task, onClose, onSuccess }) {
+         co2: task.co2 || 0,
+         water: task.water || 0,
+         waste: task.waste || 0,
++        verificationPrompt: task.verificationPrompt || task.description || null,
+       });
+       setSubmissionId(subId);
+       setStage('pending');
+@@ -115,14 +117,21 @@ export default function TaskLogModal({ task, onClose, onSuccess }) {
+           setStage(status);
+           setReason(r || '');
+ 
+-          // Award points on approval
++          // Award points on approval.
++          // The server reads the point value from the submission record and
++          // keys the ledger entry on the submission id, so a repeated
++          // onSnapshot callback cannot award twice.
+           if (status === 'approved' && profile) {
+-            await awardPointsAndUpdateStreak(user.uid, task.id, task.points || 50, {
+-              co2: task.co2 || 0,
+-              water: task.water || 0,
+-              waste: task.waste || 0,
+-            });
+-            toast.success(<span>+{task.points || 50} points earned! <PremiumIcon icon={Leaf} color="emerald" size={16} /></span>);
++            try {
++              const result = await awardTaskPoints(subId);
++              const earned = result.points ?? task.points ?? 50;
++              if (!result.duplicate) {
++                toast.success(<span>+{earned} points earned! <PremiumIcon icon={Leaf} color="emerald" size={16} /></span>);
++              }
++            } catch (err) {
++              console.error('[TaskLogModal] award failed', err);
++              toast.error(err.message || "Your task was approved, but the points didn't land. They'll be retried.");
++            }
+           }
+ 
+           // Delay closing the modal for 3.5 seconds so the user can read the AI's reasoning!
+diff --git a/src/constants/rewards.js b/src/constants/rewards.js
+index 5c3244b..0aa1c69 100644
+--- a/src/constants/rewards.js
++++ b/src/constants/rewards.js
+@@ -9,6 +9,28 @@ export const TIER_CONFIG = {
+   gaia: { color: '#10B981', glow: '0 0 35px rgba(16,185,129,0.6)', label: 'Legendary' },
+   supernova: { color: '#8B5CF6', glow: '0 0 40px rgba(139,92,246,0.7)', label: 'Legendary' },
+   prime: { color: '#FFD700', glow: '0 0 50px rgba(255,215,0,1)', label: 'Prime' },
++  // ΓöÇΓöÇ ULTRA TIERS ΓÇö Eco-Tech / Cyber-Sustainability line ΓöÇΓöÇ
++  quantum: { color: '#22D3EE', glow: '0 0 40px rgba(34,211,238,0.7)', label: 'Quantum' },
++  helix: { color: '#4ADE80', glow: '0 0 45px rgba(74,222,128,0.75)', label: 'Mythic' },
++  singularity: { color: '#F0ABFC', glow: '0 0 55px rgba(240,171,252,0.85)', label: 'Singularity' },
++};
++
++// ΓöÇΓöÇΓöÇ GROWTH RINGS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++// Ring count for the Regalia signature motif (see components/common/GrowthRings).
++// More rings = grown further. This encodes rarity structurally, so tier is still
++// distinguishable without relying on colour alone.
++export const TIER_RINGS = {
++  bronze: 1,
++  silver: 2,
++  gold: 3,
++  platinum: 4,
++  god: 5,
++  gaia: 6,
++  supernova: 7,
++  quantum: 7,
++  helix: 8,
++  singularity: 8,
++  prime: 9, // Celestial ΓÇö uniquely the densest, and the only aurora bearer
+ };
+ 
+ // All hardcoded rewards that the user can unlock
+@@ -23,25 +45,137 @@ export const REWARDS_DB = [
+   { id: 'frame-supernova', type: 'frame', name: 'Supernova', description: 'Cosmic Energy ΓÇö a legendary deep-space frame with rotating neon gradients.', pointCost: 50000, tier: 'supernova', icon: '≡ƒîî' },
+   { id: 'frame-prime', type: 'frame', name: 'Prime Frame', description: 'The Ascended Aura ΓÇö the ultimate, reality-bending celestial frame.', pointCost: 999999, tier: 'prime', icon: 'Γ£¿' },
+ 
++  // --- ULTRA FRAMES (Eco-Tech / Cyber-Sustainability line) ---
++  { id: 'frame-biocircuit', type: 'frame', name: 'Bio-Circuit Weave', description: 'Living circuitry grown from photosynthetic silicon ΓÇö data-sap pulses through every glowing trace.', pointCost: 75000, tier: 'quantum', icon: '≡ƒº½' },
++  { id: 'frame-helix', type: 'frame', name: 'Genesis Helix', description: 'Twin strands of terraforming light orbit your avatar ΓÇö the blueprint of a reborn biosphere.', pointCost: 120000, tier: 'helix', icon: '≡ƒº¼' },
++  { id: 'frame-singularity', type: 'frame', name: 'Verdant Singularity', description: 'A collapsed star of pure life-energy. Reality bends, and forests bloom along the event horizon.', pointCost: 250000, tier: 'singularity', icon: '≡ƒîî' },
++
+   // --- NAME GLOWS ---
+   { id: 'glow-emerald', type: 'glow', name: 'Emerald Aura', description: 'A soft green glow surrounding your name in the community.', pointCost: 1500, tier: 'silver', icon: '≡ƒƒ⌐', cssClass: 'glow-emerald' },
+   { id: 'glow-aurora', type: 'glow', name: 'Aurora Borealis', description: 'A mesmerizing, shifting green and blue gradient applied to your name.', pointCost: 5000, tier: 'platinum', icon: '≡ƒîî', cssClass: 'glow-aurora' },
+   { id: 'glow-goldfoil', type: 'glow', name: 'Gold Foil', description: 'A highly sought-after metallic golden shimmer for your name.', pointCost: 10000, tier: 'god', icon: '≡ƒ¬Ö', cssClass: 'glow-goldfoil' },
+   { id: 'glow-glitch', type: 'glow', name: 'Cyber Glitch', description: 'An ultra-rare cyberpunk neon glitch effect for your name.', pointCost: 15000, tier: 'gaia', icon: '≡ƒæ╛', cssClass: 'glow-glitch' },
++  { id: 'glow-photon', type: 'glow', name: 'Photon Stream', description: 'A current of quantized cyan light flows endlessly through your name.', pointCost: 25000, tier: 'quantum', icon: '≡ƒö╖', cssClass: 'glow-photon' },
++  { id: 'glow-chlorophyll', type: 'glow', name: 'Chlorophyll Surge', description: 'Raw bio-energy ΓÇö your name photosynthesizes light in real time.', pointCost: 40000, tier: 'helix', icon: '≡ƒìâ', cssClass: 'glow-chlorophyll' },
++  { id: 'glow-eventbloom', type: 'glow', name: 'Event Bloom', description: 'Your letters warp around a micro-singularity of blooming antimatter.', pointCost: 60000, tier: 'singularity', icon: '≡ƒî╕', cssClass: 'glow-eventbloom' },
+ 
+   // --- COMPANIONS ---
+   { id: 'comp-sprout', type: 'companion', name: 'Baby Sprout', description: 'A tiny animated sprout that floats next to your avatar.', pointCost: 2000, tier: 'gold', imageUrl: '/companions/sprout_trans.png' },
+   { id: 'comp-waterwisp', type: 'companion', name: 'Water Wisp', description: 'A glowing blue droplet of pure energy orbiting your profile.', pointCost: 6000, tier: 'platinum', imageUrl: '/companions/waterwisp_trans.png' },
+   { id: 'comp-terrabot', type: 'companion', name: 'Terra Bot', description: 'A high-tech floating sci-fi drone that accompanies you.', pointCost: 12000, tier: 'god', imageUrl: '/companions/terrabot_trans.png' },
+   { id: 'comp-phoenix', type: 'companion', name: 'Solar Phoenix', description: 'A legendary creature of fire and light floating beside you.', pointCost: 25000, tier: 'supernova', imageUrl: '/companions/phoenix_trans.png' },
++  { id: 'comp-nanosprite', type: 'companion', name: 'Nano Sprite', description: 'A swarm-intelligence of pollinator microbots compressed into one shimmering sprite.', pointCost: 40000, tier: 'quantum', icon: '≡ƒ¢╕' },
+ 
+   // --- BACKGROUNDS ---
+   { id: 'bg-royalvelvet', type: 'background', name: 'Royal Velvet', description: 'A luxurious crimson and gold animated backdrop fit for royalty.', pointCost: 3000, tier: 'gold', icon: '≡ƒææ', cssClass: 'bg-royalvelvet' },
+   { id: 'bg-cosmicnebula', type: 'background', name: 'Cosmic Nebula', description: 'A mesmerizing deep space premium swirling nebula.', pointCost: 8000, tier: 'platinum', icon: '≡ƒîî', cssClass: 'bg-cosmicnebula' },
+   { id: 'bg-neonmatrix', type: 'background', name: 'Eco Matrix', description: 'Falling green digital eco-code across your profile.', pointCost: 15000, tier: 'god', icon: '≡ƒÆ╗', cssClass: 'bg-neonmatrix' },
+   { id: 'bg-diamondglint', type: 'background', name: 'Diamond Glint', description: 'A sophisticated dark slate with shining silver diamond facets.', pointCost: 30000, tier: 'supernova', icon: '≡ƒÆÄ', cssClass: 'bg-diamondglint' },
++  { id: 'bg-solargrid', type: 'background', name: 'Solar Grid Array', description: 'An orbital solar farm ΓÇö panel constellations catching sweeping flares.', pointCost: 45000, tier: 'quantum', icon: '≡ƒöå', cssClass: 'bg-solargrid' },
++  { id: 'bg-terraform', type: 'background', name: 'Terraform Horizon', description: 'Dawn over a freshly seeded exo-forest, scanned by drone light.', pointCost: 60000, tier: 'helix', icon: '≡ƒîä', cssClass: 'bg-terraform' },
++  { id: 'bg-eventhorizon', type: 'background', name: 'Verdant Event Horizon', description: 'An emerald accretion disk swirling around a heart of living dark.', pointCost: 100000, tier: 'singularity', icon: '≡ƒîÇ', cssClass: 'bg-eventhorizon' },
+ 
+   // --- APP ENTRIES ---
+   { id: 'entry-portal', type: 'entry', name: 'Cosmic Portal', description: 'A breathtaking cosmic portal that warps you into the app with golden sparks.', pointCost: 15000, tier: 'god', icon: '≡ƒîÇ' },
+   { id: 'entry-cyber', type: 'entry', name: 'Cyber Genesis', description: 'An ultra-premium cyberpunk booting sequence that glitches reality.', pointCost: 50000, tier: 'prime', icon: 'ΓÜí' }
+ ];
++
++// ΓöÇΓöÇΓöÇ LOOT CASES ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++// Shared by the Rewards UI, the drop-rate disclosure, and the server-side
++// opener in api/economy.js. One definition, so displayed odds cannot drift from
++// the odds actually rolled.
++//
++// Drop weight per tier. Higher weight = more common.
++export const TIER_WEIGHTS = {
++  bronze: 50,
++  silver: 50,
++  gold: 20,
++  platinum: 10,
++  god: 3,
++  gaia: 1,
++  supernova: 1,
++  quantum: 3,
++  helix: 2,
++  singularity: 1,
++  prime: 1,
++};
++
++// Every tier in TIER_CONFIG must appear in at least one pool, or it is
++// unobtainable. `prime` and the three ultra tiers were previously in none ΓÇö
++// that was the "reward gets excluded" bug.
++export const LOOT_CASES = [
++  {
++    id: 'bronze_case',
++    name: 'Bronze Case',
++    cost: 1000,
++    icon: '≡ƒôª',
++    color: '#CD7F32',
++    pool: ['bronze', 'silver', 'gold'],
++  },
++  {
++    id: 'silver_case',
++    name: 'Silver Case',
++    cost: 2500,
++    icon: '≡ƒº░',
++    color: '#C0C0C0',
++    pool: ['silver', 'gold', 'platinum'],
++  },
++  {
++    id: 'gold_case',
++    name: 'Gold Case',
++    cost: 5000,
++    icon: '≡ƒÆ╝',
++    color: '#FFD700',
++    pool: ['gold', 'platinum', 'god', 'gaia', 'supernova'],
++  },
++  {
++    id: 'celestial_case',
++    name: 'Celestial Case',
++    cost: 15000,
++    icon: '≡ƒîî',
++    color: '#7C3AED',
++    pool: ['platinum', 'god', 'gaia', 'supernova', 'quantum', 'helix', 'singularity', 'prime'],
++  },
++];
++
++export const LOOT_CASES_BY_ID = LOOT_CASES.reduce((acc, c) => {
++  acc[c.id] = c;
++  return acc;
++}, {});
++
++/** Items a case can actually yield. */
++export function poolForCase(caseId) {
++  const cfg = LOOT_CASES_BY_ID[caseId];
++  if (!cfg) return [];
++  return REWARDS_DB.filter((r) => cfg.pool.includes(r.tier));
++}
++
++/**
++ * Per-tier drop probability for a case, derived from the same weights the
++ * server rolls against. Used by the Drop Rates disclosure.
++ *
++ * @returns {Array<{tier, label, color, count, probability}>} descending
++ */
++export function computeDropRates(caseId) {
++  const items = poolForCase(caseId);
++  if (!items.length) return [];
++
++  const totalsByTier = {};
++  let grandTotal = 0;
++  for (const item of items) {
++    const w = TIER_WEIGHTS[item.tier] ?? 1;
++    totalsByTier[item.tier] = (totalsByTier[item.tier] || 0) + w;
++    grandTotal += w;
++  }
++
++  return Object.entries(totalsByTier)
++    .map(([tier, weight]) => ({
++      tier,
++      label: TIER_CONFIG[tier]?.label || tier,
++      color: TIER_CONFIG[tier]?.color || '#888',
++      count: items.filter((i) => i.tier === tier).length,
++      probability: weight / grandTotal,
++    }))
++    .sort((a, b) => b.probability - a.probability);
++}
++
+diff --git a/src/pages/Admin.jsx b/src/pages/Admin.jsx
+index 84ea005..b2bbe1d 100644
+--- a/src/pages/Admin.jsx
++++ b/src/pages/Admin.jsx
+@@ -1,7 +1,8 @@
+ import { useState, useEffect } from 'react';
+ import { motion } from 'framer-motion';
+ import { useAuthStore } from '../store/authStore';
+-import { getFlaggedSubmissions, updateSubmissionStatus, awardPointsAndUpdateStreak, resolveReport, getTasks, getRewards, createNotification, createOrGetChat } from '../services/firestoreService';
++import { getFlaggedSubmissions, updateSubmissionStatus, resolveReport, getTasks, getRewards, createNotification, createOrGetChat } from '../services/firestoreService';
++import { adminReviewSubmission } from '../services/economyService';
+ import { getAdminUsers, adminUpdateUserPoints, adminUpdateUserProfile, adminAwardFrame, adminBanUser, adminDeletePost, getReportedPosts, getAdminStats, getAdminChartData, getResolvedSubmissions, adminDeleteSubmission, adminCreateTask, adminUpdateTask, adminDeleteTask, adminCreateReward, adminUpdateReward, adminDeleteReward, getGlobalSettings, updateGlobalSettings, getFrameRequests, resolveFrameRequest, adminForceWeeklyReset } from '../services/adminService';
+ import { sendPasswordResetEmail } from 'firebase/auth';
+ import { auth } from '../lib/firebase';
+@@ -109,26 +110,25 @@ export default function Admin() {
+   // --- Submissions Logic ---
+   const handleDecision = async (sub, status) => {
+     try {
+-      await updateSubmissionStatus(sub.id, status, {
+-        reviewedBy: profile?.id,
+-        reason: status === 'approved' ? 'Manually approved by admin' : 'Manually rejected by admin',
+-        pointsAwarded: status === 'approved',
++      // Status change, payout and audit entry all happen server-side in one
++      // call. The payout shares its idempotency key with the student's own
++      // claim path, so a submission can never be paid for twice.
++      await adminReviewSubmission({
++        submissionId: sub.id,
++        decision: status,
++        note: status === 'approved' ? 'Manually approved by staff' : 'Manually rejected by staff',
+       });
+ 
+-      if (status === 'approved' && !sub.pointsAwarded) {
+-        await awardPointsAndUpdateStreak(sub.userId, sub.taskId, sub.points || 50, {
+-          co2: sub.co2 || 0, water: sub.water || 0, waste: sub.waste || 0,
+-        });
+-        
++      if (status === 'approved') {
+         await createNotification(sub.userId, 'system', {
+-          message: `Your task verification was approved by an Admin! You've been credited ${sub.points || 50} points.`
++          message: `Your task verification was approved. You've been credited ${sub.points || 50} points.`,
+         });
+       }
+ 
+       setFlagged((prev) => prev.filter((s) => s.id !== sub.id));
+-      toast.success(`Submission ${status}!`);
+-    } catch {
+-      toast.error('Could not update submission');
++      toast.success(`Submission ${status}`);
++    } catch (err) {
++      toast.error(err.message || 'Could not update submission');
+     }
+   };
+ 
+diff --git a/src/pages/Rewards.jsx b/src/pages/Rewards.jsx
+index 7a11dc2..ed5c282 100644
+--- a/src/pages/Rewards.jsx
++++ b/src/pages/Rewards.jsx
+@@ -1,14 +1,40 @@
+ // src/pages/Rewards.jsx
+-import { useState, useEffect } from 'react';
+-import { motion, AnimatePresence } from 'framer-motion';
++// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
++// REWARDS ΓÇö Ultra ecosystem: Frame Fitting Studio + kinetic bento catalog.
++// 3D tilt w/ specular lighting, glassmorphism, count-up points, neon progress
++// ring, scroll-staggered reveals. All motion via framer-motion (no new deps).
++// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
++import { useState, useEffect, useRef } from 'react';
++import {
++  motion, AnimatePresence, animate,
++  useMotionValue, useSpring, useTransform, useMotionTemplate,
++} from 'framer-motion';
+ import { useAuthStore } from '../store/authStore';
+-import { redeemReward, equipReward, unequipReward, subscribeUserTransactions } from '../services/firestoreService';
+-import { BronzeFrame, SilverFrame, GoldFrame, PlatinumFrame, GodFrame, GaiaFrame, SupernovaFrame, PrimeFrame } from '../components/common/Frames';
+-import { REWARDS_DB, TIER_CONFIG } from '../constants/rewards';
++import { subscribeUserTransactions } from '../services/firestoreService';
++import {
++  redeemReward, equipCosmetic, unequipCosmetic, openCase, newIdempotencyKey,
++} from '../services/economyService';
++import {
++  BronzeFrame, SilverFrame, GoldFrame, PlatinumFrame, GodFrame,
++  GaiaFrame, SupernovaFrame, PrimeFrame,
++  BiocircuitFrame, HelixFrame, SingularityFrame,
++} from '../components/common/Frames';
++import FrameStudio from '../components/rewards/FrameStudio';
++import {
++  REWARDS_DB, TIER_CONFIG, LOOT_CASES, computeDropRates, poolForCase,
++} from '../constants/rewards';
+ import toast from 'react-hot-toast';
+ import { useSettingsStore } from '../store/settingsStore';
++import { useUiStore } from '../store/uiStore';
+ import styles from './Rewards.module.css';
+ 
++// ΓöÇΓöÇΓöÇ Reel geometry ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++// Must match .scrollerItem in Rewards.module.css: 180px wide + 15px margin each
++// side. If that CSS changes, change this with it or the reel stops off-centre.
++const ITEM_WIDTH = 210;
++const WIN_INDEX = 25;
++const REEL_LENGTH = 32;
++
+ const FRAME_COMPONENTS = {
+   'frame-bronze': BronzeFrame,
+   'frame-silver': SilverFrame,
+@@ -18,8 +44,16 @@ const FRAME_COMPONENTS = {
+   'frame-gaia': GaiaFrame,
+   'frame-supernova': SupernovaFrame,
+   'frame-prime': PrimeFrame,
++  'frame-biocircuit': BiocircuitFrame,
++  'frame-helix': HelixFrame,
++  'frame-singularity': SingularityFrame,
+ };
+ 
++// Tiers that earn an oversized bento cell
++const FEATURED_TIERS = ['gaia', 'supernova', 'prime', 'quantum', 'helix', 'singularity'];
++
++// ΓöÇΓöÇΓöÇ Kinetic primitives ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
+ function ConfettiParticle({ delay }) {
+   const colors = ['#2E7D32', '#F59E0B', '#00897B', '#EF4444', '#3B82F6'];
+   const color = colors[Math.floor(Math.random() * colors.length)];
+@@ -38,95 +72,178 @@ function ConfettiParticle({ delay }) {
+   );
+ }
+ 
+-function RewardCard({ reward, userPoints, owned, onRedeem, onEquip, onUnequip, isEquipped }) {
++// Fluid count-up number
++function CountUp({ value, duration = 1.4 }) {
++  const ref = useRef(null);
++  const mv = useMotionValue(0);
++  useEffect(() => {
++    const controls = animate(mv, value, {
++      duration,
++      ease: [0.16, 1, 0.3, 1],
++      onUpdate: (v) => {
++        if (ref.current) ref.current.textContent = Math.round(v).toLocaleString();
++      },
++    });
++    return () => controls.stop();
++  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
++  return <span ref={ref}>0</span>;
++}
++
++// Self-drawing neon progress ring
++function ProgressRing({ progress, color, size = 88, label }) {
++  const r = (size - 12) / 2;
++  return (
++    <div className={styles.ringWrap} style={{ width: size, height: size }}>
++      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)', overflow: 'visible' }}>
++        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="6" />
++        <motion.circle
++          cx={size / 2} cy={size / 2} r={r}
++          fill="none" stroke={color} strokeWidth="6" strokeLinecap="round"
++          style={{ filter: `drop-shadow(0 0 8px ${color}) drop-shadow(0 0 18px ${color}66)` }}
++          initial={{ pathLength: 0 }}
++          animate={{ pathLength: Math.max(0.02, Math.min(1, progress)) }}
++          transition={{ duration: 1.8, ease: [0.16, 1, 0.3, 1], delay: 0.2 }}
++        />
++      </svg>
++      <div className={styles.ringLabel}>{label}</div>
++    </div>
++  );
++}
++
++// Vanilla-Tilt-style kinetic 3D card with specular light follow-through
++function TiltCard({ children, className, style, glow }) {
++  const px = useMotionValue(0.5);
++  const py = useMotionValue(0.5);
++  const rx = useSpring(useTransform(py, [0, 1], [8, -8]), { stiffness: 160, damping: 18, mass: 0.5 });
++  const ry = useSpring(useTransform(px, [0, 1], [-8, 8]), { stiffness: 160, damping: 18, mass: 0.5 });
++  const specX = useTransform(px, (v) => v * 100);
++  const specY = useTransform(py, (v) => v * 100);
++  const specular = useMotionTemplate`radial-gradient(460px circle at ${specX}% ${specY}%, rgba(255,255,255,0.13), transparent 55%)`;
++
++  const handleMove = (e) => {
++    const rect = e.currentTarget.getBoundingClientRect();
++    px.set((e.clientX - rect.left) / rect.width);
++    py.set((e.clientY - rect.top) / rect.height);
++  };
++  const handleLeave = () => { px.set(0.5); py.set(0.5); };
++
++  return (
++    <motion.div
++      className={className}
++      style={{ ...style, rotateX: rx, rotateY: ry, transformPerspective: 1000 }}
++      onMouseMove={handleMove}
++      onMouseLeave={handleLeave}
++      whileHover={glow ? { boxShadow: glow } : undefined}
++    >
++      {children}
++      <motion.div className={styles.specular} style={{ background: specular }} aria-hidden />
++    </motion.div>
++  );
++}
++
++// Scroll-triggered stagger reveal (0.85 ΓåÆ 1.0 scale + alpha fade)
++const revealProps = (i = 0) => ({
++  initial: { opacity: 0, scale: 0.85, y: 26 },
++  whileInView: { opacity: 1, scale: 1, y: 0 },
++  viewport: { once: true, margin: '-40px' },
++  transition: { duration: 0.6, delay: (i % 6) * 0.06, ease: [0.16, 1, 0.3, 1] },
++});
++
++// ΓöÇΓöÇΓöÇ Reward card ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++function RewardCard({ reward, userPoints, owned, onRedeem, onEquip, onUnequip, isEquipped, index }) {
+   const cfg = TIER_CONFIG[reward.tier] || TIER_CONFIG.bronze;
+   const canAfford = userPoints >= reward.pointCost;
+   const isFrame = reward.type === 'frame';
+   const FrameComponent = isFrame ? FRAME_COMPONENTS[reward.id] : null;
++  const featured = FEATURED_TIERS.includes(reward.tier);
+ 
+   return (
+-    <motion.div
+-      className={`${styles.card} ${owned ? styles.owned : ''} ${!canAfford && !owned ? styles.locked : ''}`}
+-      whileHover={canAfford && !owned ? { y: -4, boxShadow: cfg.glow } : {}}
+-      transition={{ duration: 0.2 }}
+-      style={{ '--reward-color': cfg.color, border: isEquipped ? `2px solid ${cfg.color}` : undefined }}
+-    >
+-      <div className={styles.badgeArt}>
+-        <div className={styles.badgeGlow} style={{ background: cfg.color }} />
+-        {FrameComponent ? (
+-          <div style={{ width: '80%', height: '80%', position: 'relative', zIndex: 2 }}>
+-            <FrameComponent />
+-          </div>
+-        ) : reward.type === 'glow' ? (
+-          <span className={reward.cssClass} style={{ fontSize: '1.5rem', zIndex: 2, position: 'relative' }}>EcoUser</span>
+-        ) : reward.type === 'background' ? (
+-          <div className={reward.cssClass} style={{ 
+-            width: '80%', height: '80%', borderRadius: '8px', zIndex: 2, minHeight: 'auto', padding: 0, position: 'relative',
+-            boxShadow: 'inset 0 0 10px rgba(255,255,255,0.5), 0 0 15px rgba(255,255,255,0.3)',
+-            border: '2px solid rgba(255,255,255,0.8)'
+-          }}>
+-            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(255,255,255,0.6) 0%, transparent 50%)', borderRadius: '6px', pointerEvents: 'none' }} />
+-          </div>
+-        ) : reward.type === 'companion' ? (
+-          reward.imageUrl ? (
+-            <img src={reward.imageUrl} alt={reward.name} style={{ width: '60%', height: '60%', objectFit: 'contain', zIndex: 2, position: 'relative', filter: 'drop-shadow(0 0 10px rgba(255,255,255,0.2))' }} />
++    <motion.div className={`${styles.cell} ${featured ? styles.cellFeatured : ''}`} {...revealProps(index)}>
++      <TiltCard
++        className={`${styles.card} ${owned ? styles.owned : ''} ${!canAfford && !owned ? styles.locked : ''}`}
++        glow={canAfford && !owned ? cfg.glow : undefined}
++        style={{ '--reward-color': cfg.color, border: isEquipped ? `1.5px solid ${cfg.color}` : undefined }}
++      >
++        <div className={styles.badgeArt}>
++          <div className={styles.badgeGlow} style={{ background: cfg.color }} />
++          {FrameComponent ? (
++            <div style={{ width: '80%', height: '80%', position: 'relative', zIndex: 2 }}>
++              <FrameComponent />
++            </div>
++          ) : reward.type === 'glow' ? (
++            <span className={reward.cssClass} style={{ fontSize: '1.5rem', zIndex: 2, position: 'relative' }}>EcoUser</span>
++          ) : reward.type === 'background' ? (
++            <div className={reward.cssClass} style={{
++              width: '80%', height: '80%', borderRadius: '8px', zIndex: 2, minHeight: 'auto', padding: 0, position: 'relative',
++              boxShadow: 'inset 0 0 10px rgba(255,255,255,0.5), 0 0 15px rgba(255,255,255,0.3)',
++              border: '2px solid rgba(255,255,255,0.8)',
++            }}>
++              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(255,255,255,0.6) 0%, transparent 50%)', borderRadius: '6px', pointerEvents: 'none' }} />
++            </div>
++          ) : reward.type === 'companion' ? (
++            reward.imageUrl ? (
++              <img src={reward.imageUrl} alt={reward.name} style={{ width: '60%', height: '60%', objectFit: 'contain', zIndex: 2, position: 'relative', filter: 'drop-shadow(0 0 10px rgba(255,255,255,0.2))' }} />
++            ) : (
++              <span style={{ fontSize: '3rem', zIndex: 2, position: 'relative', filter: `drop-shadow(0 0 16px ${cfg.color})` }}>{reward.icon}</span>
++            )
+           ) : (
+-            <span style={{ fontSize: '3rem', zIndex: 2, position: 'relative' }}>{reward.icon}</span>
+-          )
+-        ) : (
+-          <span className={styles.badgeEmoji} style={{ zIndex: 2, position: 'relative' }}>{reward.icon || '≡ƒÅà'}</span>
+-        )}
+-      </div>
++            <span className={styles.badgeEmoji} style={{ zIndex: 2, position: 'relative' }}>{reward.icon || '≡ƒÅà'}</span>
++          )}
++        </div>
+ 
+-      <div className={styles.tierLabel} style={{ color: cfg.color }}>
+-        {cfg.label} Tier
+-      </div>
++        <div className={styles.tierLabel} style={{ color: cfg.color }}>
++          {cfg.label} Tier
++        </div>
+ 
+-      <h3 className={styles.rewardName}>{reward.name}</h3>
+-      <p className={styles.rewardDesc}>{reward.description}</p>
++        <h3 className={styles.rewardName}>{reward.name}</h3>
++        <p className={styles.rewardDesc}>{reward.description}</p>
+ 
+-      <div className={styles.cardFooter}>
+-        <div className={styles.cost}>
+-          <span className={styles.costNum}>{reward.pointCost.toLocaleString()}</span>
+-          <span className={styles.costLabel}>pts</span>
+-        </div>
++        <div className={styles.cardFooter}>
++          <div className={styles.cost}>
++            <span className={styles.costNum}>{reward.pointCost.toLocaleString()}</span>
++            <span className={styles.costLabel}>pts</span>
++          </div>
+ 
+-        {owned ? (
+-          isEquipped ? (
+-            <motion.button 
+-              className={styles.redeemBtn} 
+-              style={{ background: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }} 
+-              onClick={() => onUnequip(reward.type)}
+-              whileTap={{ scale: 0.95 }}
+-            >
+-              Unequip
+-            </motion.button>
++          {owned ? (
++            isEquipped ? (
++              <motion.button
++                className={styles.redeemBtn}
++                style={{ background: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
++                onClick={() => onUnequip(reward.type)}
++                whileTap={{ scale: 0.95 }}
++              >
++                Unequip
++              </motion.button>
++            ) : (
++              <motion.button
++                className={styles.redeemBtn}
++                style={{ background: cfg.color, color: '#000', boxShadow: cfg.glow }}
++                onClick={() => onEquip(reward.type, reward.id)}
++                whileTap={{ scale: 0.95 }}
++              >
++                Equip
++              </motion.button>
++            )
+           ) : (
+-            <motion.button 
+-              className={styles.redeemBtn} 
+-              style={{ background: cfg.color, color: '#000', boxShadow: cfg.glow }} 
+-              onClick={() => onEquip(reward.type, reward.id)}
++            <motion.button
++              className={styles.redeemBtn}
++              disabled={!canAfford}
++              onClick={() => onRedeem(reward)}
+               whileTap={{ scale: 0.95 }}
++              style={canAfford ? { boxShadow: cfg.glow } : {}}
+             >
+-              Equip
++              {canAfford ? 'Redeem ≡ƒÄü' : `Need ${(reward.pointCost - userPoints).toLocaleString()} more`}
+             </motion.button>
+-          )
+-        ) : (
+-          <motion.button
+-            className={styles.redeemBtn}
+-            disabled={!canAfford}
+-            onClick={() => onRedeem(reward)}
+-            whileTap={{ scale: 0.95 }}
+-            style={canAfford ? { boxShadow: cfg.glow } : {}}
+-          >
+-            {canAfford ? 'Redeem ≡ƒÄü' : `Need ${(reward.pointCost - userPoints).toLocaleString()} more`}
+-          </motion.button>
+-        )}
+-      </div>
++          )}
++        </div>
++      </TiltCard>
+     </motion.div>
+   );
+ }
+ 
++// ΓöÇΓöÇΓöÇ Page ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
+ export default function Rewards() {
+   const { user, profile } = useAuthStore();
+   const { settings } = useSettingsStore();
+@@ -139,6 +256,20 @@ export default function Rewards() {
+   const [transactions, setTransactions] = useState([]);
+   const [txLoading, setTxLoading] = useState(false);
+ 
++  // Lootboxes
++  const [lootboxActive, setLootboxActive] = useState(false);
++  const [spinningCase, setSpinningCase] = useState(null);
++  const [scrollerItems, setScrollerItems] = useState([]);
++  const [openingCase, setOpeningCase] = useState(null);   // case id while in flight
++  const [lootResult, setLootResult] = useState(null);     // server-decided outcome
++  const [spinTargetX, setSpinTargetX] = useState(null);   // px, measured on open
++  const [revealed, setRevealed] = useState(false);        // reel has finished
++  const [ratesOpen, setRatesOpen] = useState(null);       // case id of open panel
++  const scrollerWindowRef = useRef(null);
++  const reducedMotion = useUiStore((s) => s.reducedMotion);
++
++  const wonReward = lootResult?.reward || null;
++
+   useEffect(() => {
+     if (user && activeTab === 'history') {
+       setTxLoading(true);
+@@ -155,7 +286,7 @@ export default function Rewards() {
+     setError(null);
+     try {
+       const combined = [];
+-      
++
+       // Add all predefined rewards from REWARDS_DB
+       REWARDS_DB.forEach(reward => {
+         // If the user ALREADY OWNS the reward, ALWAYS show it so they can equip it!
+@@ -195,33 +326,36 @@ export default function Rewards() {
+   const handleEquip = async (type, rewardId) => {
+     if (!user) return;
+     try {
+-      await equipReward(user.uid, type, rewardId);
+-      toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} equipped!`);
++      await equipCosmetic(type, rewardId);
++      toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} equipped`);
+     } catch (err) {
+-      toast.error('Failed to equip');
++      toast.error(err.message || 'Could not equip that item');
+     }
+   };
+ 
+   const handleUnequip = async (type) => {
+     if (!user) return;
+     try {
+-      await unequipReward(user.uid, type);
+-      toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} unequipped!`);
++      await unequipCosmetic(type);
++      toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} unequipped`);
+     } catch (err) {
+-      toast.error('Failed to unequip');
++      toast.error(err.message || 'Could not unequip that item');
+     }
+   };
+ 
+   const handleRedeem = async (reward) => {
+     if (!user || !profile) return;
++    if (unlocking) return; // in-flight guard: one purchase at a time
+     setUnlocking(reward.id);
+     try {
+-      await redeemReward(user.uid, reward.id, reward.pointCost);
++      // Price, affordability and ownership are all validated server-side; the
++      // client sends an id and renders the result.
++      await redeemReward(reward.id);
+       setShowConfetti(true);
+       setTimeout(() => setShowConfetti(false), 2000);
+-      toast.success(`≡ƒÄë ${reward.name} unlocked!`);
++      toast.success(`${reward.name} unlocked`);
+     } catch (err) {
+-      toast.error(err.message || 'Could not redeem reward');
++      toast.error(err.message || 'Could not redeem that reward');
+     } finally {
+       setUnlocking(null);
+     }
+@@ -239,6 +373,8 @@ export default function Rewards() {
+   };
+ 
+   const userPoints = profile?.spendableBalance ?? profile?.points ?? 0;
++  // Raw error detail is shown to staff only (┬º2.6).
++  const isStaff = ['teacher', 'admin', 'owner'].includes(profile?.role);
+ 
+   // Filter and sort logic
+   const filteredRewards = rewards.filter(r => {
+@@ -248,7 +384,7 @@ export default function Rewards() {
+     if (activeTab === 'companions') return r.type === 'companion';
+     if (activeTab === 'backgrounds') return r.type === 'background';
+     if (activeTab === 'entries') return r.type === 'entry';
+-    return true; 
++    return true;
+   });
+ 
+   if (activeTab === 'all') {
+@@ -256,7 +392,7 @@ export default function Rewards() {
+       // Prioritize frames first
+       if (a.type === 'frame' && b.type !== 'frame') return -1;
+       if (b.type === 'frame' && a.type !== 'frame') return 1;
+-      
++
+       // For the rest, sort by cost to mix them naturally
+       if (a.pointCost !== b.pointCost) return a.pointCost - b.pointCost;
+       return a.id.localeCompare(b.id);
+@@ -265,71 +401,112 @@ export default function Rewards() {
+ 
+   const TABS = ['all', 'lootboxes', 'frames', 'glows', 'companions', 'backgrounds', 'entries'];
+ 
+-  const LOOT_CASES = [
+-    { id: 'bronze_case', name: 'Bronze Case', cost: 1000, icon: '≡ƒôª', color: '#CD7F32' },
+-    { id: 'silver_case', name: 'Silver Case', cost: 2500, icon: '≡ƒº░', color: '#C0C0C0' },
+-    { id: 'gold_case', name: 'Gold Case', cost: 5000, icon: '≡ƒÆ╝', color: '#FFD700' }
+-  ];
+-
+-  const [lootboxActive, setLootboxActive] = useState(false);
+-  const [spinningCase, setSpinningCase] = useState(null);
+-  const [wonReward, setWonReward] = useState(null);
+-  const [scrollerItems, setScrollerItems] = useState([]);
+-  
+-  const generateLoot = (cost) => {
+-    // Generate a weighted random reward based on case cost
+-    // Bronze: up to silver tier. Silver: up to platinum. Gold: up to god/gaia
+-    let pool = [];
+-    if (cost === 1000) pool = REWARDS_DB.filter(r => ['bronze', 'silver', 'gold'].includes(r.tier));
+-    if (cost === 2500) pool = REWARDS_DB.filter(r => ['silver', 'gold', 'platinum'].includes(r.tier));
+-    if (cost === 5000) pool = REWARDS_DB.filter(r => ['gold', 'platinum', 'god', 'gaia', 'supernova'].includes(r.tier));
+-    
+-    // Add weights (cheaper items have higher chance)
+-    const weightedPool = [];
+-    pool.forEach(r => {
+-      let weight = 10;
+-      if (r.tier === 'bronze' || r.tier === 'silver') weight = 50;
+-      if (r.tier === 'gold') weight = 20;
+-      if (r.tier === 'platinum') weight = 10;
+-      if (r.tier === 'god') weight = 3;
+-      if (r.tier === 'gaia' || r.tier === 'supernova') weight = 1;
+-      for (let i=0; i<weight; i++) weightedPool.push(r);
+-    });
+-
+-    return weightedPool[Math.floor(Math.random() * weightedPool.length)];
+-  };
+-
++  // ΓöÇΓöÇ Loot case opening ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  // The outcome is decided by the server (crypto RNG, weighted by the same table
++  // the drop-rate panel displays). The client's only job is to animate a result
++  // it has already been given.
+   const handleOpenLootbox = async (caseConfig) => {
++    if (!user) return;
++    if (openingCase) return;               // A-2: no double-spend on double-click
+     if (userPoints < caseConfig.cost) {
+-      toast.error('Not enough points!');
++      toast.error('Not enough points for that case yet.');
+       return;
+     }
+ 
+-    const wonItem = generateLoot(caseConfig.cost);
+-    
+-    // Generate 30 random items for the visual scroller
+-    const scroller = Array.from({length: 30}).map(() => REWARDS_DB[Math.floor(Math.random() * REWARDS_DB.length)]);
+-    // Set the 25th item to be the winning item
+-    scroller[25] = wonItem;
+-    
+-    setScrollerItems(scroller);
+-    setSpinningCase(caseConfig);
+-    setLootboxActive(true);
+-    setWonReward(null);
+-
+-    // After animation (4 seconds), reveal
+-    setTimeout(async () => {
+-      setWonReward(wonItem);
+-      try {
+-        await redeemReward(user.uid, wonItem.id, caseConfig.cost);
+-        setShowConfetti(true);
+-        setTimeout(() => setShowConfetti(false), 2000);
+-      } catch (err) {
+-        toast.error('Failed to claim reward: ' + err.message);
++    setOpeningCase(caseConfig.id);
++
++    // Stable across retries of this same open, so a flaky connection cannot
++    // charge twice.
++    const idempotencyKey = newIdempotencyKey('case');
++
++    try {
++      const result = await openCase(caseConfig.id, idempotencyKey);
++      const won = result.reward;
++
++      // Build the reel from the case's real pool, so what scrolls past is an
++      // honest sample of what could have been won.
++      const pool = poolForCase(caseConfig.id);
++      const reel = Array.from(
++        { length: REEL_LENGTH },
++        (_, i) => pool[i % pool.length] || won
++      );
++      // Shuffle visually (presentation only ΓÇö never decides an outcome).
++      for (let i = reel.length - 1; i > 0; i--) {
++        const j = Math.floor(Math.random() * (i + 1));
++        [reel[i], reel[j]] = [reel[j], reel[i]];
+       }
+-    }, 4000);
++      reel[WIN_INDEX] = won;
++
++      setScrollerItems(reel);
++      setSpinningCase(caseConfig);
++      setLootResult(result);
++      setSpinTargetX(null);   // measured once the modal is on screen
++      setRevealed(false);
++      setLootboxActive(true);
++    } catch (err) {
++      toast.error(err.message || 'Could not open that case');
++      setOpeningCase(null);
++    }
++  };
++
++  // Measure the window and start the reel only once the modal is actually laid
++  // out ΓÇö the track must animate to a real pixel target, not a percentage of
++  // its own 6,000px width.
++  useEffect(() => {
++    if (!lootboxActive || !scrollerItems.length || spinTargetX !== null) return;
++
++    const frame = requestAnimationFrame(() => {
++      const width = scrollerWindowRef.current?.offsetWidth || 1200;
++      // Land slightly off-centre inside the winning tile so it reads as a real
++      // stop rather than a snap. Presentation only.
++      const jitter = (Math.random() - 0.5) * (ITEM_WIDTH * 0.4);
++      setSpinTargetX(width / 2 - (WIN_INDEX * ITEM_WIDTH + ITEM_WIDTH / 2) + jitter);
++    });
++    return () => cancelAnimationFrame(frame);
++  }, [lootboxActive, scrollerItems.length, spinTargetX]);
++
++  const finishReveal = () => {
++    if (revealed) return;
++    setRevealed(true);
++    setOpeningCase(null);
++    if (lootResult && !lootResult.duplicate) {
++      setShowConfetti(true);
++      setTimeout(() => setShowConfetti(false), 2000);
++    }
++  };
++
++  const closeLootbox = () => {
++    setLootboxActive(false);
++    setOpeningCase(null);
++    setSpinTargetX(null);
++    setRevealed(false);
++    setLootResult(null);
++    setScrollerItems([]);
+   };
+ 
++  // Escape dismisses the reveal. Allowed only once the reel has stopped, so a
++  // keypress mid-spin cannot hide an outcome the user has already paid for.
++  useEffect(() => {
++    if (!lootboxActive) return;
++    const onKey = (e) => {
++      if (e.key === 'Escape' && revealed) closeLootbox();
++    };
++    window.addEventListener('keydown', onKey);
++    return () => window.removeEventListener('keydown', onKey);
++  }, [lootboxActive, revealed]);
++
++  // ΓöÇΓöÇ Progress toward next unowned reward (neon ring) ΓöÇΓöÇ
++  const nextGoal = rewards
++    .filter(r => !checkOwned(r) && r.pointCost > 0 && r.pointCost < 999999)
++    .sort((a, b) => a.pointCost - b.pointCost)
++    .find(r => r.pointCost > 0);
++  const goalProgress = nextGoal ? Math.min(1, userPoints / nextGoal.pointCost) : 1;
++  const goalCfg = nextGoal ? (TIER_CONFIG[nextGoal.tier] || TIER_CONFIG.bronze) : TIER_CONFIG.prime;
++
++  const frameRewards = rewards.filter(r => r.type === 'frame');
++  const equippedFrameId = profile?.activeFrame || profile?.equipped?.frame || null;
++  const showStudio = (activeTab === 'all' || activeTab === 'frames') && frameRewards.length > 0 && !loading && !error;
++
+   return (
+     <div className={styles.page}>
+       {/* Confetti */}
+@@ -339,13 +516,31 @@ export default function Rewards() {
+         ))}
+       </AnimatePresence>
+ 
+-      <div className={styles.header}>
++      {/* ΓöÇΓöÇ Kinetic header panel ΓöÇΓöÇ */}
++      <motion.div
++        className={styles.headerPanel}
++        initial={{ opacity: 0, y: -18 }}
++        animate={{ opacity: 1, y: 0 }}
++        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
++      >
+         <div>
+           <h1 className={styles.title}>Rewards</h1>
+-          <p className={styles.subtitle}>You have <strong>{userPoints.toLocaleString()} pts</strong> to spend</p>
++          <p className={styles.subtitle}>
++            <strong className={styles.pointsCounter}><CountUp value={userPoints} /></strong>
++            <span> pts to spend</span>
++          </p>
++          {nextGoal && (
++            <p className={styles.goalHint}>
++              Next unlock: <span style={{ color: goalCfg.color }}>{nextGoal.name}</span> ┬╖ {nextGoal.pointCost.toLocaleString()} pts
++            </p>
++          )}
+         </div>
+-        <span className={styles.headerIcon}>≡ƒÄü</span>
+-      </div>
++        <ProgressRing
++          progress={goalProgress}
++          color={goalCfg.color}
++          label={`${Math.round(goalProgress * 100)}%`}
++        />
++      </motion.div>
+ 
+       <div className={styles.tabsContainer} style={{ flexWrap: 'wrap', gap: '8px' }}>
+         <div className={styles.tabs} style={{ flexWrap: 'wrap', gap: '8px', borderBottom: 'none' }}>
+@@ -369,6 +564,23 @@ export default function Rewards() {
+         </button>
+       </div>
+ 
++      {/* ΓöÇΓöÇ Frame Fitting Studio ΓöÇΓöÇ */}
++      {showStudio && (
++        <FrameStudio
++          frames={frameRewards}
++          frameComponents={FRAME_COMPONENTS}
++          avatarUrl={profile?.photoURL}
++          displayName={profile?.displayName}
++          userPoints={userPoints}
++          equippedId={equippedFrameId}
++          checkOwned={checkOwned}
++          onEquip={handleEquip}
++          onUnequip={handleUnequip}
++          onRedeem={handleRedeem}
++          reducedMotion={!!profile?.reducedMotion}
++        />
++      )}
++
+       {activeTab === 'history' ? (
+         <div className={styles.historyList}>
+           {txLoading ? (
+@@ -405,37 +617,90 @@ export default function Rewards() {
+             <h2 style={{ fontFamily: 'var(--font-display)', margin: '0 0 10px 0', fontSize: '2rem' }}>Mystery Lootboxes</h2>
+             <p style={{ color: 'var(--color-text-secondary)' }}>Test your luck to win high-tier rewards for a fraction of the cost.</p>
+           </div>
+-          
++
+           <div className={styles.lootboxGrid}>
+-            {LOOT_CASES.map(c => (
+-              <div key={c.id} className={styles.caseCard} style={{ '--case-color': c.color }}>
+-                <div className={styles.caseIcon}>{c.icon}</div>
+-                <h3 className={styles.caseTitle}>{c.name}</h3>
+-                <div className={styles.caseCost}>{c.cost.toLocaleString()} pts</div>
+-                <button 
+-                  className={styles.caseBtn} 
+-                  disabled={userPoints < c.cost}
+-                  onClick={() => handleOpenLootbox(c)}
+-                >
+-                  {userPoints >= c.cost ? 'Unlock Case' : `Need ${(c.cost - userPoints).toLocaleString()} more`}
+-                </button>
+-              </div>
+-            ))}
++            {LOOT_CASES.map((c, i) => {
++              const busy = openingCase === c.id;
++              const affordable = userPoints >= c.cost;
++              const rates = ratesOpen === c.id ? computeDropRates(c.id) : null;
++              return (
++                <motion.div key={c.id} {...revealProps(i)}>
++                  <div className={styles.caseCard} style={{ '--case-color': c.color }}>
++                    <div className={styles.caseIcon}>{c.icon}</div>
++                    <h3 className={styles.caseTitle}>{c.name}</h3>
++                    <div className={styles.caseCost}>{c.cost.toLocaleString()} pts</div>
++                    <button
++                      className={styles.caseBtn}
++                      disabled={!affordable || !!openingCase}
++                      onClick={() => handleOpenLootbox(c)}
++                    >
++                      {busy
++                        ? 'OpeningΓÇª'
++                        : affordable
++                          ? 'Unlock Case'
++                          : `Need ${(c.cost - userPoints).toLocaleString()} more`}
++                    </button>
++
++                    {/* Drop-rate disclosure ΓÇö derived from the same weight table
++                        the server rolls against, so it cannot drift. */}
++                    <button
++                      type="button"
++                      className={styles.ratesToggle}
++                      aria-expanded={ratesOpen === c.id}
++                      onClick={() => setRatesOpen(ratesOpen === c.id ? null : c.id)}
++                    >
++                      {ratesOpen === c.id ? 'Hide drop rates' : 'Drop rates'}
++                    </button>
++
++                    <AnimatePresence initial={false}>
++                      {rates && (
++                        <motion.ul
++                          className={styles.ratesPanel}
++                          initial={{ height: 0, opacity: 0 }}
++                          animate={{ height: 'auto', opacity: 1 }}
++                          exit={{ height: 0, opacity: 0 }}
++                          transition={{ duration: reducedMotion ? 0 : 0.22 }}
++                        >
++                          {rates.map((r) => (
++                            <li key={r.tier} className={styles.ratesRow}>
++                              <span className={styles.ratesDot} style={{ background: r.color }} aria-hidden="true" />
++                              <span className={styles.ratesLabel}>{r.label}</span>
++                              <span className={styles.ratesPct}>
++                                {(r.probability * 100).toFixed(r.probability < 0.01 ? 2 : 1)}%
++                              </span>
++                            </li>
++                          ))}
++                          <li className={styles.ratesNote}>
++                            Duplicates are converted to points automatically.
++                          </li>
++                        </motion.ul>
++                      )}
++                    </AnimatePresence>
++                  </div>
++                </motion.div>
++              );
++            })}
+           </div>
+         </div>
+       ) : loading ? (
+-        <div className={styles.grid}>
++        <div className={styles.bentoGrid}>
+           {Array.from({ length: 6 }).map((_, i) => (
+             <div key={i} className={`skeleton ${styles.cardSkeleton}`} />
+           ))}
+         </div>
+       ) : error ? (
+         <div style={{ padding: '48px 24px', gap: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+-          <span style={{ fontSize: '3rem' }}>ΓÜá∩╕Å</span>
+-          <p style={{ fontWeight: 600, color: 'var(--color-text)', margin: 0 }}>Failed to load rewards</p>
+-          <code style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)', background: 'var(--color-surface)', padding: '8px 12px', borderRadius: 8, maxWidth: '100%', wordBreak: 'break-all', display: 'block' }}>
+-            {error}
+-          </code>
++          <span style={{ fontSize: '3rem' }} aria-hidden="true">ΓÜá∩╕Å</span>
++          <p style={{ fontWeight: 600, color: 'var(--color-text)', margin: 0 }}>We couldn't load the rewards catalog</p>
++          <p style={{ color: 'var(--color-text-secondary)', margin: 0, maxWidth: 420, fontSize: 'var(--text-sm)' }}>
++            This is usually a temporary connection problem. Try again in a moment.
++          </p>
++          {/* Raw detail stays available to staff only ΓÇö students get a sentence. */}
++          {isStaff && (
++            <code style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-tertiary)', background: 'var(--color-surface)', padding: '8px 12px', borderRadius: 8, maxWidth: '100%', wordBreak: 'break-all', display: 'block' }}>
++              {error}
++            </code>
++          )}
+           <button
+             onClick={loadRewards}
+             style={{ background: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: 'var(--radius-full)', padding: '10px 24px', fontWeight: 600, cursor: 'pointer', fontSize: 'var(--text-sm)' }}
+@@ -444,10 +709,11 @@ export default function Rewards() {
+           </button>
+         </div>
+       ) : (
+-        <div className={styles.grid}>
+-          {filteredRewards.map((r) => (
++        <div className={styles.bentoGrid}>
++          {filteredRewards.map((r, i) => (
+             <RewardCard
+               key={r.id}
++              index={i}
+               reward={r}
+               userPoints={userPoints}
+               owned={checkOwned(r)}
+@@ -468,23 +734,36 @@ export default function Rewards() {
+ 
+       {/* LOOTBOX SCROLLER MODAL */}
+       {lootboxActive && (
+-        <div className={styles.scrollerOverlay}>
++        <div
++          className={styles.scrollerOverlay}
++          role="dialog"
++          aria-modal="true"
++          aria-label={`Opening ${spinningCase?.name || 'case'}`}
++        >
+           <div style={{ marginBottom: '20px', textAlign: 'center' }}>
+             <h2 style={{ fontFamily: 'var(--font-display)', margin: 0, fontSize: '2.5rem', textTransform: 'uppercase', letterSpacing: '2px', color: spinningCase?.color }}>
+-              Opening {spinningCase?.name}...
++              {revealed ? spinningCase?.name : `Opening ${spinningCase?.name}ΓÇª`}
+             </h2>
+           </div>
+-          
+-          <div className={styles.scrollerWindow}>
++
++          <div className={styles.scrollerWindow} ref={scrollerWindowRef}>
+             <div className={styles.scrollerLine}></div>
+-            <motion.div 
++            <motion.div
+               className={styles.scrollerTrack}
+-              initial={{ x: '50%' }}
+-              animate={{ x: wonReward ? `calc(50% - ${25 * 210}px)` : '50%' }}
+-              transition={{ duration: 5, ease: [0.05, 0.9, 0.1, 1] }}
++              initial={{ x: 0 }}
++              animate={{ x: spinTargetX ?? 0 }}
++              transition={{
++                duration: reducedMotion ? 0 : 5,
++                ease: [0.05, 0.9, 0.1, 1],
++              }}
++              // The reveal is gated on the reel actually finishing, so the card
++              // can never cover a spin that is still running.
++              onAnimationComplete={() => {
++                if (spinTargetX !== null) finishReveal();
++              }}
+             >
+               {scrollerItems.map((item, idx) => {
+-                const cfg = TIER_CONFIG[item.tier];
++                const cfg = TIER_CONFIG[item.tier] || TIER_CONFIG.bronze;
+                 return (
+                   <div key={idx} className={styles.scrollerItem} style={{ borderColor: cfg.color, boxShadow: `inset 0 0 30px ${cfg.color}40, 0 10px 20px rgba(0,0,0,0.5)` }}>
+                     <div className={styles.scrollerItemIcon}>{item.icon || '≡ƒÅà'}</div>
+@@ -496,31 +775,44 @@ export default function Rewards() {
+           </div>
+ 
+           <AnimatePresence>
+-            {wonReward && (
+-              <motion.div 
++            {revealed && wonReward && (
++              <motion.div
+                 className={styles.lootReveal}
+                 initial={{ opacity: 0 }}
+                 animate={{ opacity: 1 }}
+                 transition={{ duration: 0.5 }}
+               >
+-                <motion.div 
++                <motion.div
+                   className={styles.lootRevealCard}
+                   initial={{ scale: 0.5, y: 100 }}
+                   animate={{ scale: 1, y: 0 }}
+                   transition={{ type: 'spring', bounce: 0.6, duration: 0.8 }}
+                 >
+-                  <div style={{ fontSize: '120px', marginBottom: '20px', filter: `drop-shadow(0 0 50px ${TIER_CONFIG[wonReward.tier].color})`, position: 'relative', zIndex: 2 }}>
++                  <div style={{ fontSize: '120px', marginBottom: '20px', filter: `drop-shadow(0 0 50px ${(TIER_CONFIG[wonReward.tier] || TIER_CONFIG.bronze).color})`, position: 'relative', zIndex: 2 }}>
+                     {wonReward.icon || '≡ƒÅà'}
+                   </div>
+-                  <h2 style={{ fontFamily: 'var(--font-display)', margin: '0 0 10px 0', fontSize: '3rem', position: 'relative', zIndex: 2 }}>{wonReward.name}</h2>
+-                  <p style={{ color: TIER_CONFIG[wonReward.tier].color, textTransform: 'uppercase', fontWeight: '900', letterSpacing: '4px', fontSize: '1.2rem', position: 'relative', zIndex: 2 }}>
+-                    {TIER_CONFIG[wonReward.tier].label} Tier
++                  <h2 style={{ fontFamily: 'var(--font-ceremonial, var(--font-display))', margin: '0 0 10px 0', fontSize: '3rem', position: 'relative', zIndex: 2 }}>{wonReward.name}</h2>
++                  <p style={{ color: (TIER_CONFIG[wonReward.tier] || TIER_CONFIG.bronze).color, textTransform: 'uppercase', fontWeight: '900', letterSpacing: '4px', fontSize: '1.2rem', position: 'relative', zIndex: 2 }}>
++                    {(TIER_CONFIG[wonReward.tier] || TIER_CONFIG.bronze).label} Tier
+                   </p>
+-                  <button 
+-                    onClick={() => setLootboxActive(false)} 
+-                    style={{ marginTop: '40px', padding: '16px 40px', background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '100px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1.2rem', position: 'relative', zIndex: 2, boxShadow: '0 10px 20px rgba(139, 92, 246, 0.4)' }}
++
++                  {/* A-1: a duplicate used to charge full price for nothing.
++                      It is now converted to points, and we say so plainly. */}
++                  {lootResult?.duplicate && (
++                    <p style={{ marginTop: 14, color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)', maxWidth: 380, position: 'relative', zIndex: 2 }}>
++                      You already owned this, so it was converted to{' '}
++                      <strong style={{ color: 'var(--color-gold, #F59E0B)' }}>
++                        +{lootResult.refund.toLocaleString()} points
++                      </strong>.
++                    </p>
++                  )}
++
++                  <button
++                    onClick={closeLootbox}
++                    autoFocus
++                    style={{ marginTop: '32px', padding: '16px 40px', background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '100px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1.2rem', position: 'relative', zIndex: 2, boxShadow: '0 10px 20px rgba(139, 92, 246, 0.4)' }}
+                   >
+-                    Claim Reward
++                    {lootResult?.duplicate ? 'Collect Points' : 'Claim Reward'}
+                   </button>
+                 </motion.div>
+               </motion.div>
+diff --git a/src/pages/Rewards.module.css b/src/pages/Rewards.module.css
+index 025aee5..975eaea 100644
+--- a/src/pages/Rewards.module.css
++++ b/src/pages/Rewards.module.css
+@@ -15,7 +15,8 @@
+ .grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+ @media (min-width: 600px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+ @media (min-width: 1024px) { .grid { grid-template-columns: repeat(3, 1fr); } }
+-.card { background: var(--color-bg-card); border-radius: 24px; border: 1px solid var(--color-border); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15); padding: 32px 24px; display: flex; flex-direction: column; gap: 12px; position: relative; overflow: hidden; transition: transform 0.3s ease, box-shadow 0.3s ease; align-items: center; text-align: center; }
++.card { background: color-mix(in srgb, var(--color-bg-card) 62%, transparent); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border-radius: 24px; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.05); padding: 32px 24px; display: flex; flex-direction: column; gap: 12px; position: relative; overflow: hidden; transition: border-color 0.3s ease, box-shadow 0.3s ease; align-items: center; text-align: center; height: 100%; transform-style: preserve-3d; }
++.card:hover { border-color: rgba(255, 255, 255, 0.2); }
+ .owned { border-color: rgba(34, 197, 94, 0.4); background: linear-gradient(135deg, rgba(34, 197, 94, 0.04), var(--color-bg-card)); }
+ .locked { opacity: 0.75; }
+ .badgeArt { position: relative; width: 140px; height: 140px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; }
+@@ -130,6 +131,76 @@
+ .caseBtn:active { transform: scale(0.95); }
+ .caseBtn:disabled { background: var(--color-border); color: var(--color-text-tertiary); box-shadow: none; cursor: not-allowed; opacity: 0.5; }
+ 
++/* ΓöÇΓöÇ Drop-rate disclosure ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++   Odds are computed from the same weight table the server rolls against
++   (computeDropRates in constants/rewards.js), so what is shown here cannot
++   drift from what is actually rolled. */
++.ratesToggle {
++  background: none;
++  border: none;
++  color: var(--color-text-secondary);
++  font-size: var(--text-xs);
++  font-weight: 600;
++  letter-spacing: 0.04em;
++  text-transform: uppercase;
++  cursor: pointer;
++  padding: 6px 10px;
++  border-radius: var(--radius-full);
++  transition: color var(--transition-standard, 0.2s), background var(--transition-standard, 0.2s);
++  /* 44px touch target without changing the visual size */
++  min-height: 44px;
++}
++.ratesToggle:hover,
++.ratesToggle:focus-visible {
++  color: var(--color-text);
++  background: rgba(255, 255, 255, 0.06);
++}
++.ratesPanel {
++  list-style: none;
++  margin: 0;
++  padding: 0;
++  width: 100%;
++  overflow: hidden;
++  text-align: left;
++}
++.ratesRow {
++  display: flex;
++  align-items: center;
++  gap: 10px;
++  padding: 7px 4px;
++  border-bottom: 1px solid var(--color-border, rgba(255, 255, 255, 0.06));
++  font-size: var(--text-sm);
++}
++.ratesRow:last-of-type { border-bottom: none; }
++.ratesDot {
++  width: 9px;
++  height: 9px;
++  border-radius: 50%;
++  flex-shrink: 0;
++  box-shadow: 0 0 8px currentColor;
++}
++.ratesLabel {
++  flex: 1;
++  color: var(--color-text-secondary);
++  font-weight: 600;
++}
++.ratesPct {
++  color: var(--color-text);
++  font-weight: 800;
++  font-variant-numeric: tabular-nums;
++}
++.ratesNote {
++  padding: 10px 4px 2px;
++  color: var(--color-text-tertiary);
++  font-size: var(--text-xs);
++  line-height: 1.45;
++}
++
++/* The case icon's idle bob is decoration ΓÇö drop it when motion is reduced. */
++@media (prefers-reduced-motion: reduce) {
++  .caseIcon { animation: none; }
++}
++
+ /* 3D SCROLLER ANIMATION */
+ .scrollerOverlay {
+   position: fixed;
+@@ -249,3 +320,78 @@
+ @keyframes rotateGlow {
+   100% { transform: rotate(360deg); }
+ }
++
++/* ΓòÉΓòÉΓòÉ ULTRA UPGRADE ΓÇö kinetic header, neon ring, bento catalog ΓòÉΓòÉΓòÉ */
++
++.headerPanel {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 20px;
++  padding: 24px 28px;
++  border-radius: 24px;
++  border: 1px solid rgba(255, 255, 255, 0.1);
++  background: color-mix(in srgb, var(--color-bg-card) 55%, transparent);
++  backdrop-filter: blur(24px);
++  -webkit-backdrop-filter: blur(24px);
++  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06);
++}
++.pointsCounter {
++  font-family: var(--font-display);
++  font-size: var(--text-2xl);
++  font-weight: var(--font-extrabold);
++  color: var(--color-gold);
++  text-shadow: 0 0 22px rgba(245, 158, 11, 0.5);
++}
++.goalHint {
++  margin: 6px 0 0;
++  font-size: var(--text-xs);
++  color: var(--color-text-tertiary);
++}
++.goalHint span { font-weight: 700; }
++
++.ringWrap {
++  position: relative;
++  flex-shrink: 0;
++  display: flex;
++  align-items: center;
++  justify-content: center;
++}
++.ringLabel {
++  position: absolute;
++  inset: 0;
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  font-family: var(--font-display);
++  font-size: var(--text-sm);
++  font-weight: var(--font-extrabold);
++  color: var(--color-text);
++}
++
++/* Asymmetric 3D bento catalog */
++.bentoGrid {
++  display: grid;
++  grid-template-columns: 1fr;
++  gap: 18px;
++  grid-auto-flow: dense;
++  perspective: 1400px;
++}
++@media (min-width: 600px) { .bentoGrid { grid-template-columns: repeat(2, 1fr); } }
++@media (min-width: 1024px) { .bentoGrid { grid-template-columns: repeat(3, 1fr); } }
++
++.cell { display: flex; min-width: 0; }
++.cell > * { flex: 1; }
++@media (min-width: 600px) {
++  .cellFeatured { grid-column: span 2; }
++}
++
++/* Specular light follow-through (rendered above card content) */
++.specular {
++  position: absolute;
++  inset: 0;
++  z-index: 5;
++  border-radius: inherit;
++  pointer-events: none;
++  mix-blend-mode: screen;
++}
+diff --git a/src/pages/Settings.jsx b/src/pages/Settings.jsx
+index 1313422..53ac855 100644
+--- a/src/pages/Settings.jsx
++++ b/src/pages/Settings.jsx
+@@ -171,6 +171,7 @@ export default function Settings() {
+             <SelectRow
+               icon="≡ƒîê" label="Theme" value={activeTheme}
+               options={[
++                { value: 'regalia', label: '≡ƒææ Regalia' },
+                 { value: 'metallic', label: '≡ƒîæ Metallic Black' },
+                 { value: 'forest', label: '≡ƒî┐ Forest Green' },
+                 { value: 'ocean', label: '≡ƒîè Ocean Blue' },
+diff --git a/src/services/firestoreService.js b/src/services/firestoreService.js
+index bd88815..017bc41 100644
+--- a/src/services/firestoreService.js
++++ b/src/services/firestoreService.js
+@@ -184,6 +184,10 @@ export async function createSubmission(userId, taskId, imageUrl, taskMeta = {})
+     co2: taskMeta.co2 || 0,
+     water: taskMeta.water || 0,
+     waste: taskMeta.waste || 0,
++    // Stored so api/verify.js has criteria to judge against for AI-generated
++    // tasks that never existed as a `tasks` document. When the task IS in the
++    // catalog, that document wins ΓÇö see api/verify.js.
++    verificationPrompt: taskMeta.verificationPrompt || null,
+     aiVerdict: null,
+     confidence: null,
+     reason: null,
+diff --git a/src/store/uiStore.js b/src/store/uiStore.js
+index 81f5247..8a2a8d6 100644
+--- a/src/store/uiStore.js
++++ b/src/store/uiStore.js
+@@ -3,8 +3,8 @@ import { create } from 'zustand';
+ 
+ const getPreferredTheme = () => {
+   try {
+-    return localStorage.getItem('ecospark-theme') || 'metallic';
+-  } catch { return 'metallic'; }
++    return localStorage.getItem('ecospark-theme') || 'regalia';
++  } catch { return 'regalia'; }
+ };
+ 
+ const getPreferredMotion = () => {
+@@ -64,8 +64,18 @@ export const useUiStore = create((set, get) => ({
+ 
+   setTheme: (theme) => {
+     localStorage.setItem('ecospark-theme', theme);
+-    // Map theme name to data-theme attribute value
+-    const attrMap = { forest: '', ocean: 'ocean', dark: 'dark', midnight: 'midnight', sunset: 'sunset', metallic: 'metallic' };
++    // Map theme name to data-theme attribute value.
++    // A theme missing from this map falls through to its raw name, which only
++    // works by coincidence ΓÇö register new themes here explicitly.
++    const attrMap = {
++      forest: '',
++      ocean: 'ocean',
++      dark: 'dark',
++      midnight: 'midnight',
++      sunset: 'sunset',
++      metallic: 'metallic',
++      regalia: 'regalia',
++    };
+     document.documentElement.setAttribute('data-theme', attrMap[theme] ?? theme);
+     set({ activeTheme: theme });
+   },
+diff --git a/src/styles/globals.css b/src/styles/globals.css
+index 5b242f4..40e77a3 100644
+--- a/src/styles/globals.css
++++ b/src/styles/globals.css
+@@ -46,6 +46,22 @@ body {
+   transition-duration: 0.01ms !important;
+ }
+ 
++/* Screen-reader-only text. Declared explicitly rather than leaning on
++   Tailwind's utility: this is load-bearing for the status/label announcements
++   in GrowthRings and the icon-only controls, and must not depend on whether a
++   scanner happened to spot the class name. */
++.sr-only {
++  position: absolute;
++  width: 1px;
++  height: 1px;
++  padding: 0;
++  margin: -1px;
++  overflow: hidden;
++  clip: rect(0, 0, 0, 0);
++  white-space: nowrap;
++  border-width: 0;
++}
++
+ /* ============================================================
+    TYPOGRAPHY
+    ============================================================ */
+diff --git a/src/styles/rewards.css b/src/styles/rewards.css
+index a7ce5f7..cd4d333 100644
+--- a/src/styles/rewards.css
++++ b/src/styles/rewards.css
+@@ -232,3 +232,155 @@
+   0%, 100% { transform: translateY(0) rotate(0deg); }
+   50% { transform: translateY(-8px) rotate(5deg); }
+ }
++
++/* ============================================================
++   ULTRA REWARDS ΓÇö QUANTUM / MYTHIC / SINGULARITY GLOWS
++   ============================================================ */
++.glow-photon {
++  background: linear-gradient(90deg, #67E8F9, #FFFFFF, #22D3EE, #0891B2, #67E8F9);
++  background-size: 250% auto;
++  color: transparent;
++  -webkit-background-clip: text;
++  background-clip: text;
++  animation: photon-stream 1.8s linear infinite;
++  text-shadow: 0 0 18px rgba(34, 211, 238, 0.9), 0 0 32px rgba(34, 211, 238, 0.5);
++  font-weight: bold;
++  display: inline-block;
++}
++@keyframes photon-stream {
++  0% { background-position: 0% center; }
++  100% { background-position: -250% center; }
++}
++
++.glow-chlorophyll {
++  background: linear-gradient(120deg, #14532D, #4ADE80, #ECFDF5, #22C55E, #14532D);
++  background-size: 300% auto;
++  color: transparent;
++  -webkit-background-clip: text;
++  background-clip: text;
++  animation: chlorophyll-surge 3s ease-in-out infinite;
++  text-shadow: 0 0 16px rgba(74, 222, 128, 0.9), 0 0 30px rgba(74, 222, 128, 0.5);
++  font-weight: bold;
++  display: inline-block;
++}
++@keyframes chlorophyll-surge {
++  0%, 100% { background-position: 0% center; filter: brightness(1); }
++  50% { background-position: 150% center; filter: brightness(1.35); }
++}
++
++.glow-eventbloom {
++  background: linear-gradient(90deg, #F0ABFC, #34D399, #A78BFA, #F0ABFC);
++  background-size: 280% auto;
++  color: transparent;
++  -webkit-background-clip: text;
++  background-clip: text;
++  animation: event-bloom 2.6s ease-in-out infinite;
++  text-shadow: 0 0 20px rgba(240, 171, 252, 0.9), 0 0 40px rgba(52, 211, 153, 0.5);
++  font-weight: bold;
++  display: inline-block;
++}
++@keyframes event-bloom {
++  0%, 100% { background-position: 0% center; letter-spacing: 0; transform: scale(1); }
++  50% { background-position: 200% center; letter-spacing: 1.5px; transform: scale(1.04); }
++}
++
++/* ============================================================
++   ULTRA REWARDS ΓÇö QUANTUM / MYTHIC / SINGULARITY BACKGROUNDS
++   ============================================================ */
++.bg-solargrid {
++  background-color: #071B2B !important;
++  background-image:
++    linear-gradient(rgba(34, 211, 238, 0.12) 1.5px, transparent 1.5px),
++    linear-gradient(90deg, rgba(34, 211, 238, 0.12) 1.5px, transparent 1.5px),
++    radial-gradient(circle at 80% 15%, rgba(253, 224, 71, 0.22), transparent 45%) !important;
++  background-size: 46px 46px, 46px 46px, 100% 100%;
++  position: relative;
++  overflow: hidden;
++  min-height: 100vh;
++  border-radius: 16px;
++  padding: 24px;
++}
++.bg-solargrid::before {
++  content: '';
++  position: absolute;
++  inset: 0;
++  background: linear-gradient(115deg, transparent 42%, rgba(253, 224, 71, 0.14) 48%, rgba(255, 255, 255, 0.22) 50%, rgba(253, 224, 71, 0.14) 52%, transparent 58%);
++  background-size: 280% 100%;
++  animation: solar-sweep 6s ease-in-out infinite;
++  pointer-events: none;
++}
++@keyframes solar-sweep {
++  0% { background-position: 120% 0; }
++  100% { background-position: -160% 0; }
++}
++
++.bg-terraform {
++  background: linear-gradient(180deg, #052E16 0%, #14532D 35%, #B45309 78%, #FDE047 120%) !important;
++  position: relative;
++  overflow: hidden;
++  min-height: 100vh;
++  border-radius: 16px;
++  padding: 24px;
++}
++.bg-terraform::before {
++  content: '';
++  position: absolute;
++  inset: 0;
++  background: repeating-linear-gradient(0deg, transparent 0 26px, rgba(74, 222, 128, 0.09) 26px 28px);
++  animation: terraform-scan 8s linear infinite;
++  pointer-events: none;
++}
++.bg-terraform::after {
++  content: '';
++  position: absolute;
++  left: 0; right: 0; height: 90px;
++  background: linear-gradient(180deg, transparent, rgba(74, 222, 128, 0.25), transparent);
++  animation: terraform-beam 5s ease-in-out infinite alternate;
++  pointer-events: none;
++}
++@keyframes terraform-scan {
++  from { background-position: 0 0; }
++  to { background-position: 0 260px; }
++}
++@keyframes terraform-beam {
++  0% { top: -10%; opacity: 0.4; }
++  100% { top: 85%; opacity: 0.9; }
++}
++
++.bg-eventhorizon {
++  background: radial-gradient(circle at 50% 45%, #000000 0%, #1E1B4B 32%, #0F172A 70%) !important;
++  position: relative;
++  overflow: hidden;
++  min-height: 100vh;
++  border-radius: 16px;
++  padding: 24px;
++}
++.bg-eventhorizon::before {
++  content: '';
++  position: absolute;
++  top: 50%; left: 50%;
++  width: 190%; height: 190%;
++  transform: translate(-50%, -50%);
++  background: conic-gradient(from 0deg,
++    transparent 0deg, rgba(52, 211, 153, 0.28) 40deg, transparent 90deg,
++    rgba(240, 171, 252, 0.24) 150deg, transparent 210deg,
++    rgba(167, 139, 250, 0.22) 280deg, transparent 340deg);
++  animation: horizon-swirl 14s linear infinite;
++  pointer-events: none;
++}
++.bg-eventhorizon::after {
++  content: '';
++  position: absolute;
++  inset: 0;
++  background-image:
++    radial-gradient(1px 1px at 25px 35px, #ffffff, rgba(0,0,0,0)),
++    radial-gradient(1.5px 1.5px at 70px 80px, #A7F3D0, rgba(0,0,0,0)),
++    radial-gradient(1px 1px at 110px 20px, #F0ABFC, rgba(0,0,0,0));
++  background-repeat: repeat;
++  background-size: 130px 130px;
++  animation: twinkle 4s infinite alternate;
++  pointer-events: none;
++}
++@keyframes horizon-swirl {
++  100% { transform: translate(-50%, -50%) rotate(360deg); }
++}
+diff --git a/src/styles/tokens.css b/src/styles/tokens.css
+index f600f37..cac26f3 100644
+--- a/src/styles/tokens.css
++++ b/src/styles/tokens.css
+@@ -35,6 +35,9 @@
+   --font-display: 'Manrope', system-ui, sans-serif;
+   --font-body: 'Inter', system-ui, sans-serif;
+   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
++  /* Ceremonial serif ΓÇö landing hero, tier-reveal item names, Celestial titles.
++     Deliberately NOT used for UI chrome, tables, or body copy. */
++  --font-ceremonial: 'Fraunces', 'Instrument Serif', Georgia, serif;
+ 
+   --text-xs: clamp(0.65rem, 1.5vw, 0.75rem);
+   --text-sm: clamp(0.8rem, 1.8vw, 0.875rem);
+@@ -332,6 +335,130 @@
+   --text-xl: 1.875rem;
+ }
+ 
++/* ============================================================
++   CELESTIAL AURORA
++   Reserved for the top reward tier (Celestial / frame-prime) and nothing else.
++   Registering --gradient-angle as an <angle> is what makes the conic gradient
++   animatable at all; a plain custom property would jump, not sweep.
++   ============================================================ */
++@property --gradient-angle {
++  syntax: '<angle>';
++  initial-value: 0deg;
++  inherits: false;
++}
++
++.celestial-aurora {
++  background: conic-gradient(
++    from var(--gradient-angle),
++    #7C3AED, #22D3EE, #F59E0B, #7C3AED
++  );
++  animation: aurora-spin 6s linear infinite;
++}
++
++@keyframes aurora-spin {
++  to { --gradient-angle: 360deg; }
++}
++
++/* ============================================================
++   GROWTH RINGS ΓÇö the Regalia signature motif
++   Concentric rings, read as tree growth rings / ripples. Ring count and
++   ornamentation scale with tier: "grown further" encoded visually.
++   Consumed by src/components/common/GrowthRings.jsx.
++   ============================================================ */
++@keyframes ring-drift {
++  from { transform: rotate(0deg); }
++  to   { transform: rotate(360deg); }
++}
++
++@keyframes ring-pulse {
++  0%   { transform: scale(0.82); opacity: 0.85; }
++  70%  { opacity: 0; }
++  100% { transform: scale(1.6); opacity: 0; }
++}
++
++@keyframes ring-breathe {
++  0%, 100% { opacity: 0.45; }
++  50%      { opacity: 0.9; }
++}
++
++/* Honour both the OS setting and the in-app override.
++   The globals.css blanket rule collapses durations to 0.01ms, which would leave
++   these mid-sweep; killing the animation outright is the legible end state. */
++@media (prefers-reduced-motion: reduce) {
++  .celestial-aurora { animation: none; }
++}
++
++[data-reduced-motion="true"] .celestial-aurora { animation: none; }
++
++
++/* ------------------------------------------
++   REGALIA THEME ΓÇö flagship identity
++   Deep obsidian-emerald base, gold ceremonial accent.
++   Hairline borders are GOLD, not green: that single choice is what stops this
++   reading as "another dark mode" and starts it reading as ceremonial.
++
++   Contrast measured against --color-bg #0A0F0C (same convention as midnight):
++     --color-text           #F3F6F1 ΓåÆ 17.3:1  (AAA)
++     --color-text-secondary #A8BCA9 ΓåÆ  8.6:1  (AAA)
++     --color-text-tertiary  #6E8770 ΓåÆ  4.6:1  (AA, body text min)
++   Against the lightest surface --color-surface-raised #1C2A1E:
++     --color-text           #F3F6F1 ΓåÆ 13.1:1  (AAA)
++     --color-text-secondary #A8BCA9 ΓåÆ  6.5:1  (AA)
++     --color-text-tertiary  #6E8770 ΓåÆ  3.5:1  ΓåÆ LARGE TEXT / NON-TEXT ONLY.
++   Do not use --color-text-tertiary for body copy on raised surfaces.
++
++   The amethystΓåÆcyanΓåÆgold aurora is reserved for the Celestial tier alone.
++   Its rarity is the design; do not reach for it elsewhere.
++------------------------------------------ */
++[data-theme="regalia"] {
++  --color-primary: #1FA463;
++  --color-primary-light: #34C880;
++  --color-primary-dark: #0F5132;
++  --color-primary-rgb: 31, 164, 99;
++
++  /* amethyst ΓÇö already the platinum tier colour, so this reuses existing equity */
++  --color-secondary: #7C3AED;
++  --color-secondary-light: #A78BFA;
++  --color-secondary-dark: #5B21B6;
++
++  --glass-bg: rgba(10, 15, 12, 0.78);
++  --glass-bg-strong: rgba(10, 15, 12, 0.92);
++  --glass-border: 1px solid rgba(245, 158, 11, 0.16);
++  --glass-blur: blur(22px);
++  --glass-blur-sm: blur(12px);
++
++  --color-bg: #0A0F0C;
++  --color-bg-card: #10160F;
++  --color-bg-elevated: #161F16;
++  --color-surface: #161F16;
++  --color-surface-raised: #1C2A1E;
++
++  --color-border: rgba(245, 158, 11, 0.10);
++  --color-border-strong: rgba(245, 158, 11, 0.28);
++
++  --color-text: #F3F6F1;
++  --color-text-secondary: #A8BCA9;
++  --color-text-tertiary: #6E8770;
++  --color-text-inverse: #0A0F0C;
++
++  /* Depth via gold hairline brightness first, drop shadow second */
++  --elevation-0: none;
++  --elevation-1: 0 0 0 1px rgba(245, 158, 11, 0.06);
++  --elevation-2: 0 0 0 1px rgba(245, 158, 11, 0.10), 0 4px 14px rgba(0, 0, 0, 0.55);
++  --elevation-3: 0 0 0 1px rgba(245, 158, 11, 0.16), 0 10px 28px rgba(0, 0, 0, 0.70);
++  --elevation-4: 0 0 0 1px rgba(245, 158, 11, 0.22), 0 20px 48px rgba(0, 0, 0, 0.80);
++
++  --glow-primary: 0 0 22px rgba(31, 164, 99, 0.50), 0 0 8px rgba(31, 164, 99, 0.30);
++  --glow-gold: 0 0 22px rgba(245, 158, 11, 0.55), 0 0 8px rgba(245, 158, 11, 0.32);
++  --glow-celestial:
++    0 0 40px rgba(124, 58, 237, 0.55),
++    0 0 20px rgba(34, 211, 238, 0.40),
++    0 0 10px rgba(245, 158, 11, 0.50);
++
++  --color-streak: #FF8C5A;
++  --color-streak-glow: rgba(255, 140, 90, 0.4);
++}
++
+ /* ------------------------------------------
+    DARK METALLIC THEME
+ ------------------------------------------ */
