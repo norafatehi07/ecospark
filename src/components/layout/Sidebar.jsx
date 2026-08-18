@@ -88,7 +88,7 @@ export default function Sidebar() {
     navigate('/auth');
   };
 
-  const isStaff = profile?.role === 'teacher' || profile?.role === 'admin';
+  const isStaff = profile?.role === 'teacher' || profile?.role === 'admin' || profile?.role === 'owner';
   const visibleManage = MANAGE_NAV.filter(item => {
     if (item.require === 'staff') return isStaff;
     return true;

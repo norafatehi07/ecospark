@@ -2,7 +2,8 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../store/authStore';
-import { redeemReward, equipReward, unequipReward, subscribeUserTransactions } from '../services/firestoreService';
+import { subscribeUserTransactions } from '../services/firestoreService';
+import { redeemReward, equipCosmetic, unequipCosmetic, openCase } from '../services/economyService';
 import { BronzeFrame, SilverFrame, GoldFrame, PlatinumFrame, GodFrame, GaiaFrame, SupernovaFrame, PrimeFrame } from '../components/common/Frames';
 import { REWARDS_DB, TIER_CONFIG } from '../constants/rewards';
 import toast from 'react-hot-toast';
@@ -168,11 +169,13 @@ export default function Rewards() {
       
       REWARDS_DB.forEach(reward => {
         let ownsReward = false;
+        const inFlatInventory = Array.isArray(profile?.inventory) && profile.inventory.includes(reward.id);
+        
         if (reward.type === 'frame') {
-          ownsReward = profile?.unlockedFrames?.includes(reward.id) || profile?.inventory?.frames?.includes(reward.id);
+          ownsReward = profile?.unlockedFrames?.includes(reward.id) || profile?.inventory?.frames?.includes(reward.id) || inFlatInventory;
         } else {
           const pluralType = reward.type === 'entry' ? 'entries' : `${reward.type}s`;
-          ownsReward = profile?.inventory?.[pluralType]?.includes(reward.id);
+          ownsReward = profile?.inventory?.[pluralType]?.includes(reward.id) || inFlatInventory;
         }
 
         let shouldShow = true;
@@ -202,20 +205,20 @@ export default function Rewards() {
   const handleEquip = async (type, rewardId) => {
     if (!user) return;
     try {
-      await equipReward(user.uid, type, rewardId);
+      await equipCosmetic(type, rewardId);
       toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} equipped!`);
     } catch (err) {
-      toast.error('Failed to equip');
+      toast.error('Failed to equip: ' + err.message);
     }
   };
 
   const handleUnequip = async (type) => {
     if (!user) return;
     try {
-      await unequipReward(user.uid, type);
+      await unequipCosmetic(type);
       toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} unequipped!`);
     } catch (err) {
-      toast.error('Failed to unequip');
+      toast.error('Failed to unequip: ' + err.message);
     }
   };
 
@@ -223,7 +226,7 @@ export default function Rewards() {
     if (!user || !profile) return;
     setUnlocking(reward.id);
     try {
-      await redeemReward(user.uid, reward.id, reward.pointCost);
+      await redeemReward(reward.id);
       setShowConfetti(true);
       setTimeout(() => setShowConfetti(false), 2000);
       toast.success(`🎉 ${reward.name} unlocked!`);
@@ -235,9 +238,10 @@ export default function Rewards() {
   };
 
   const checkOwned = (r) => {
-    if (r.type === 'frame') return profile?.unlockedFrames?.includes(r.id) || profile?.inventory?.frames?.includes(r.id);
+    const inFlatInventory = Array.isArray(profile?.inventory) && profile.inventory.includes(r.id);
+    if (r.type === 'frame') return profile?.unlockedFrames?.includes(r.id) || profile?.inventory?.frames?.includes(r.id) || inFlatInventory;
     const pluralType = r.type === 'entry' ? 'entries' : `${r.type}s`;
-    return profile?.inventory?.[pluralType]?.includes(r.id);
+    return profile?.inventory?.[pluralType]?.includes(r.id) || inFlatInventory;
   };
 
   const checkEquipped = (r) => {
@@ -284,53 +288,38 @@ export default function Rewards() {
   const [wonReward, setWonReward] = useState(null);
   const [scrollerItems, setScrollerItems] = useState([]);
   
-  const generateLoot = (cost) => {
-    let pool = [];
-    if (cost === 1000) pool = REWARDS_DB.filter(r => ['bronze', 'silver', 'gold'].includes(r.tier));
-    if (cost === 2500) pool = REWARDS_DB.filter(r => ['silver', 'gold', 'platinum'].includes(r.tier));
-    if (cost === 5000) pool = REWARDS_DB.filter(r => ['gold', 'platinum', 'god', 'gaia', 'supernova'].includes(r.tier));
-    
-    const weightedPool = [];
-    pool.forEach(r => {
-      let weight = 10;
-      if (r.tier === 'bronze' || r.tier === 'silver') weight = 50;
-      if (r.tier === 'gold') weight = 20;
-      if (r.tier === 'platinum') weight = 10;
-      if (r.tier === 'god') weight = 3;
-      if (r.tier === 'gaia' || r.tier === 'supernova') weight = 1;
-      for (let i=0; i<weight; i++) weightedPool.push(r);
-    });
-
-    return weightedPool[Math.floor(Math.random() * weightedPool.length)];
-  };
-
   const handleOpenLootbox = async (caseConfig) => {
     if (userPoints < caseConfig.cost) {
       toast.error('Not enough points!');
       return;
     }
 
-    const wonItem = generateLoot(caseConfig.cost);
-    const scroller = Array.from({length: 30}).map(() => REWARDS_DB[Math.floor(Math.random() * REWARDS_DB.length)]);
-    scroller[25] = wonItem;
-    
-    setScrollerItems(scroller);
     setSpinningCase(caseConfig);
     setLootboxActive(true);
     setWonReward(null);
     setIsSpinning(true);
 
-    setTimeout(async () => {
-      setIsSpinning(false);
-      setWonReward(wonItem);
-      try {
-        await redeemReward(user.uid, wonItem.id, caseConfig.cost);
+    try {
+      const result = await openCase(caseConfig.id);
+      
+      const wonItem = REWARDS_DB.find(r => r.id === result.wonRewardId) || REWARDS_DB[0];
+      const scroller = Array.from({length: 30}).map(() => REWARDS_DB[Math.floor(Math.random() * REWARDS_DB.length)]);
+      scroller[25] = wonItem;
+      
+      setScrollerItems(scroller);
+
+      setTimeout(() => {
+        setIsSpinning(false);
+        setWonReward(wonItem);
         setShowConfetti(true);
         setTimeout(() => setShowConfetti(false), 2000);
-      } catch (err) {
-        toast.error('Failed to claim reward: ' + err.message);
-      }
-    }, 4000);
+      }, 4000);
+
+    } catch (err) {
+      setIsSpinning(false);
+      setLootboxActive(false);
+      toast.error('Failed to open case: ' + err.message);
+    }
   };
 
   return (

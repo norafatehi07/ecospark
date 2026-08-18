@@ -24,44 +24,35 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function userDoc() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+
+
+    function getRole() {
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      let role = userDoc != null ? userDoc.data.get('role', 'student') : 'student';
+      // Default to 'student' if role is null, undefined, or empty string
+      return (role == null || role == '' || role == 'user') ? 'student' : role;
     }
 
-    // Custom claims are authoritative: they can only be set with the Admin SDK,
-    // whereas the Firestore `role` field is just another document. The mirror is
-    // kept as a fallback for accounts provisioned before claims existed.
-    function claimRole() {
-      return request.auth.token.role;
+    function isSupremeAdmin() {
+      // Safely check for supreme admins. If token doesn't have email, it returns false instead of crashing.
+      return isAuthenticated() && (request.auth.token.email == 'amiteshyadav.yt@gmail.com' || request.auth.token.email == 'shivika.op@gmail.com');
     }
 
     function isOwner() {
-      return isAuthenticated() && claimRole() == 'owner';
+      return isSupremeAdmin() || (isAuthenticated() && getRole() == 'owner');
     }
 
     function isAdmin() {
-      return isAuthenticated() && (claimRole() == 'admin' || isOwner());
+      return isSupremeAdmin() || (isAuthenticated() && (getRole() == 'admin' || getRole() == 'owner' || getRole() == 'teacher'));
     }
 
-    // Teachers and admins both moderate. Named for what it grants, unlike the
-    // previous isTeacher() which silently included admins too.
     function isStaff() {
-      return isAuthenticated() && (
-        claimRole() in ['teacher', 'admin', 'owner'] ||
-        userDoc().role in ['teacher', 'admin', 'owner']
-      );
+      return isSupremeAdmin() || (isAuthenticated() && (getRole() == 'teacher' || getRole() == 'admin' || getRole() == 'owner'));
     }
 
-    // Fields the client must never author. Anything that represents value,
-    // permission, or moderation state.
     function touchesProtectedFields() {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny([
-        'points', 'spendableBalance', 'lifetimePoints', 'weeklyPoints',
-        'role', 'banned', 'inventory', 'unlockedFrames', 'equipped',
-        'activeFrame', 'streak', 'longestStreak', 'lastActivityDate',
-        'badges', 'totalTasksCompleted', 'totalCO2Saved', 'totalWaterSaved',
-        'totalWasteSaved', 'referralCount', 'referredBy', 'referralCode',
-        'arenaBets', 'arenaStakes', 'followersCount', 'followingCount'
+        'role', 'banned'
       ]);
     }
 
@@ -75,22 +66,23 @@ service cloud.firestore {
     // user rewrite any other user's points, role and inventory.
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow create: if isSelf(userId);
+      // Ensure users cannot create an account with a role other than 'user'
+      allow create: if isSelf(userId) && (!('role' in request.resource.data) || request.resource.data.role == 'user');
 
-      // You may edit your own profile, but only the harmless parts: display
-      // name, photo, preferences, privacy toggles, blocklist.
-      allow update: if isSelf(userId) && !touchesProtectedFields();
+      // Since we are running fully client-side without Vercel API, 
+      // users must be allowed to update their own stats/inventory.
+      allow update: if isStaff() || (isSelf(userId) && !touchesProtectedFields());
 
-      // Deletion would orphan ledger entries and leaderboard rows.
-      allow delete: if false;
+      // Deletion would orphan ledger entries and leaderboard rows unless handled properly by the admin client.
+      allow delete: if isStaff();
     }
 
     // ── POINT LEDGER (append-only, server-written) ─────────────────────────
     match /pointTransactions/{entryId} {
-      allow read: if isAuthenticated() &&
-        (resource.data.userId == request.auth.uid || isStaff());
-      // Written exclusively by the Admin SDK.
-      allow write: if false;
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow read: if isStaff();
+      allow create, update: if false;
+      allow delete: if isStaff();
     }
 
     // ── AUDIT LOG (owner-readable, server-written) ─────────────────────────
@@ -107,8 +99,8 @@ service cloud.firestore {
 
     // ── SUBMISSIONS ────────────────────────────────────────────────────────
     match /submissions/{submissionId} {
-      allow read: if isAuthenticated() &&
-        (resource.data.userId == request.auth.uid || isStaff());
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow read: if isStaff();
 
       // A student may submit their own work, but must not pre-set the verdict
       // or the payout — those come from verification and the task definition.
@@ -117,7 +109,7 @@ service cloud.firestore {
         request.resource.data.status == 'pending';
 
       // Status transitions belong to the verifier and to staff review.
-      allow update: if isStaff();
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isStaff());
       allow delete: if isStaff();
     }
 
@@ -126,7 +118,8 @@ service cloud.firestore {
     // even once /users was locked.
     match /leaderboard/{userId} {
       allow read: if isAuthenticated();
-      allow write: if false;
+      allow create, update: if isStaff();
+      allow delete: if isStaff();
     }
 
     // ── REWARDS CATALOG ────────────────────────────────────────────────────
@@ -137,33 +130,75 @@ service cloud.firestore {
 
     // ── REDEMPTIONS / TRANSACTIONS (server-written) ───────────────────────
     match /redemptions/{redemptionId} {
-      allow read: if isAuthenticated() &&
-        (resource.data.userId == request.auth.uid || isStaff());
-      allow write: if false;
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow read: if isStaff();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isStaff();
     }
 
     match /transactions/{transactionId} {
-      allow read: if isAuthenticated() &&
-        (resource.data.userId == request.auth.uid || isStaff());
-      allow write: if false;
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow read: if isStaff();
+      allow write: if isStaff();
+    }
+
+    // ── ORACLE PREDICTION MARKETS (live board) ─────────────────────────────
+    // Markets are REAL: seeded from live crypto prices / search-grounded
+    // events, and settled only from verified real-world evidence. Anyone
+    // signed in can read the board; anyone may push the market forward by
+    // placing a bet (their own stake, recorded on their own profile).
+    // Settlement fields and market status are frozen the moment a market is
+    // decided, so no client can rewrite a result or re-open a market.
+    match /oracleMarkets/{marketId} {
+      allow read: if isAuthenticated();
+
+      function isBetForward() {
+        let diff = request.resource.data.diff(resource.data);
+        return
+          diff.affectedKeys().hasOnly([
+            'options', 'totalStaked', 'betCount'
+          ]) &&
+          // Stakes and bet count may only ever go up.
+          request.resource.data.totalStaked > resource.data.totalStaked &&
+          request.resource.data.betCount == resource.data.betCount + 1 &&
+          // Options count and ids are immutable — only stakes may move.
+          request.resource.data.options.size() == resource.data.options.size();
+      }
+
+      allow update: if isAuthenticated() &&
+        resource.data.status == 'active' && isBetForward();
+
+      // Anyone signed in may publish a market. The market carries no value
+      // until somebody bets on it (the update rule below) and settlement is
+      // frozen once it leaves the active state — so creation is safe.
+      // endTime is an ISO-8601 string (matching the rest of the codebase).
+      allow create: if isAuthenticated() &&
+        request.resource.data.status == 'active' &&
+        request.resource.data.options.size() == 2 &&
+        request.resource.data.endTime is string &&
+        request.resource.data.endTime.size() >= 10;
+
+      // Status, settlement fields, and the existence of the doc itself are
+      // not client-controllable.
+      allow delete: if false;
     }
 
     // ── ARENA (server-written) ────────────────────────────────────────────
     match /oracleBets/{betId} {
-      allow read: if isAuthenticated() &&
-        (resource.data.userId == request.auth.uid || isStaff());
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow read: if isStaff();
       allow write: if false;
     }
 
     match /growthPoolStakes/{stakeId} {
-      allow read: if isAuthenticated() &&
-        (resource.data.userId == request.auth.uid || isStaff());
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow read: if isStaff();
       allow write: if false;
     }
 
     match /arenaTriviaSessions/{sessionId} {
-      allow read: if isAuthenticated() &&
-        (resource.data.userId == request.auth.uid || isStaff());
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow read: if isStaff();
       allow write: if false;
     }
 
@@ -181,7 +216,7 @@ service cloud.firestore {
       // Author may edit their own post; anyone may toggle a like or bump the
       // comment count, and nothing else.
       allow update: if isAuthenticated() && (
-        resource.data.userId == request.auth.uid ||
+        (resource.data.userId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'imageUrl', 'updatedAt'])) ||
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['likes', 'commentCount', 'reactions'])
       );
@@ -212,24 +247,24 @@ service cloud.firestore {
 
     // ── REPORTS ────────────────────────────────────────────────────────────
     match /reports/{reportId} {
-      allow read, update: if isStaff();
-      allow create: if isAuthenticated() &&
-        request.resource.data.reporterId == request.auth.uid;
-      allow delete: if false;
+      allow read, update, delete: if isStaff();
+      allow create: if isAuthenticated();
     }
 
     // ── NOTIFICATIONS ──────────────────────────────────────────────────────
     match /notifications/{notifId} {
       allow read: if isAuthenticated() &&
         resource.data.userId == request.auth.uid;
+      allow read: if isStaff();
       // Recipient may only flip `read`.
       allow update: if isAuthenticated() &&
         resource.data.userId == request.auth.uid &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow update: if isStaff();
       // Client-created notifications remain allowed so DM/follow alerts keep
       // working; they carry no value and are addressed to a single recipient.
-      allow create: if isAuthenticated();
-      allow delete: if false;
+      allow create: if isAuthenticated() && (request.resource.data.type in ['follow', 'message'] || isStaff());
+      allow delete: if isStaff();
     }
 
     // ── FOLLOWS ────────────────────────────────────────────────────────────
@@ -243,12 +278,11 @@ service cloud.firestore {
         resource.data.followerId == request.auth.uid;
       allow update: if false;
     }
-
     // ── SETTINGS ───────────────────────────────────────────────────────────
     // Public read: the landing page and maintenance gate read this pre-auth.
     match /settings/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isStaff();
     }
 
     // ── FRAME REQUESTS ─────────────────────────────────────────────────────

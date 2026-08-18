@@ -217,6 +217,106 @@ async function whoami(caller) {
   };
 }
 
+/** OWNER — force weekly reset and distribute rewards. */
+async function forceWeeklyReset(caller) {
+  const { collection, getDocs, query, orderBy, limit, doc, updateDoc, increment, setDoc, writeBatch, serverTimestamp } = await import('firebase/firestore');
+  const { db } = await import('./_lib/firebaseAdmin.js');
+  
+  // 1. Fetch top 3 users by weeklyPoints from leaderboard
+  const topQ = query(collection(db, 'leaderboard'), orderBy('weeklyPoints', 'desc'), limit(3));
+  const topSnap = await getDocs(topQ);
+  
+  const rewards = [10000, 5000, 2500];
+  const promises = [];
+  
+  for (let i = 0; i < topSnap.docs.length; i++) {
+    const docSnap = topSnap.docs[i];
+    const userId = docSnap.id;
+    const rewardPoints = rewards[i];
+    if (!rewardPoints) continue;
+    
+    const userRef = doc(db, 'users', userId);
+    let updates = {
+      points: increment(rewardPoints),
+      lifetimePoints: increment(rewardPoints),
+      spendableBalance: increment(rewardPoints),
+    };
+    if (i === 0) {
+      updates.unlockedFrames = FieldValue.arrayUnion('frame-champion');
+    }
+    
+    const updatePromise = updateDoc(userRef, updates)
+      .then(() => {
+        const txRef = doc(db, 'transactions');
+        const p1 = setDoc(txRef, {
+          userId: userId,
+          type: 'weekly_reward',
+          amount: rewardPoints,
+          description: `Weekly Leaderboard Reward (Rank #${i + 1})`,
+          createdAt: serverTimestamp(),
+        });
+        
+        const notifRef = doc(db, 'notifications');
+        const p2 = setDoc(notifRef, {
+          userId: userId,
+          type: 'weekly_reward',
+          title: `🏆 You placed #${i + 1} this week!`,
+          body: `You've been awarded ${rewardPoints} bonus points${i === 0 ? ' and an exclusive Champion Frame' : ''} for your amazing eco-efforts!`,
+          read: false,
+          createdAt: serverTimestamp(),
+        });
+        return Promise.all([p1, p2]);
+      })
+      .catch((err) => {
+        console.warn(`Could not distribute weekly reward to user ${userId}:`, err);
+      });
+      
+    promises.push(updatePromise);
+  }
+  
+  await Promise.all(promises);
+  
+  // 2. Reset weeklyPoints for all users using batch writes
+  const usersSnap = await getDocs(collection(db, 'users'));
+  
+  let batch = writeBatch(db);
+  let count = 0;
+  for (const d of usersSnap.docs) {
+    batch.update(d.ref, { weeklyPoints: 0 });
+    count++;
+    if (count === 400) {
+      await batch.commit();
+      batch = writeBatch(db);
+      count = 0;
+    }
+  }
+  if (count > 0) await batch.commit();
+  
+  // 3. Reset weeklyPoints for leaderboard collection
+  const lbSnap = await getDocs(collection(db, 'leaderboard'));
+  batch = writeBatch(db);
+  count = 0;
+  for (const d of lbSnap.docs) {
+    batch.update(d.ref, { weeklyPoints: 0 });
+    count++;
+    if (count === 400) {
+      await batch.commit();
+      batch = writeBatch(db);
+      count = 0;
+    }
+  }
+  if (count > 0) await batch.commit();
+  
+  await writeAuditLog({
+    actor: caller,
+    action: 'weekly.reset',
+    summary: 'Weekly reset completed, rewards distributed',
+    metadata: { winners: topSnap.docs.length },
+  });
+  
+  return { success: true, distributedTo: topSnap.docs.length };
+}
+
 const ACTIONS = {
   whoami: { gate: 'user', fn: whoami },
   adjust_points: { gate: 'owner', fn: adjustPoints },
@@ -224,6 +324,7 @@ const ACTIONS = {
   list_audit_log: { gate: 'owner', fn: listAuditLog },
   set_banned: { gate: 'admin', fn: setBanned },
   review_submission: { gate: 'staff', fn: reviewSubmission },
+  force_weekly_reset: { gate: 'owner', fn: forceWeeklyReset },
 };
 
 export default async function handler(req, res) {

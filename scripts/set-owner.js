@@ -16,7 +16,9 @@
 // The Firestore `role` field is still mirrored, because the UI reads it for
 // convenience — but it is a mirror, never the source of truth.
 
-import admin from 'firebase-admin';
+import { initializeApp, cert, getApps } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -46,9 +48,9 @@ if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL || !p
   );
 }
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
+if (!getApps().length) {
+  initializeApp({
+    credential: cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
       privateKey,
@@ -56,8 +58,8 @@ if (!admin.apps.length) {
   });
 }
 
-const auth = admin.auth();
-const db = admin.firestore();
+const auth = getAuth();
+const db = getFirestore();
 
 async function main() {
   const targetRole = revoking ? 'admin' : 'owner';
@@ -116,7 +118,7 @@ async function main() {
     .collection('users')
     .doc(user.uid)
     .set(
-      { role: targetRole, updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+      { role: targetRole, updatedAt: FieldValue.serverTimestamp() },
       { merge: true }
     );
 
@@ -128,7 +130,7 @@ async function main() {
     targetUserId: user.uid,
     summary: `${email} → ${targetRole} via scripts/set-owner.js`,
     metadata: { email, previousClaims: existing },
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
   });
 
   console.log(`\n  ✓ ${email} is now "${targetRole}".`);

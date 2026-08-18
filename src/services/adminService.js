@@ -1,7 +1,8 @@
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
 import { collection, getDocs, doc, updateDoc, increment, deleteDoc, getDoc, query, where, orderBy, getCountFromServer, serverTimestamp, Timestamp, setDoc, arrayUnion, limit } from 'firebase/firestore';
 
 export async function getAdminUsers() {
+  // For local dev without Vercel, use client-side Firebase
   const usersSnap = await getDocs(collection(db, 'users'));
   const users = usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   return users.sort((a, b) => {
@@ -100,28 +101,53 @@ export async function adminDeletePost(postId, reportId = null) {
 }
 
 export async function getReportedPosts() {
-  const reportsSnap = await getDocs(query(collection(db, 'reports'), where('status', '==', 'pending')));
-  const reports = [];
-  
-  for (const reportDoc of reportsSnap.docs) {
-    const reportData = reportDoc.data();
-    let postData = null;
+  try {
+    const reportsSnap = await getDocs(query(collection(db, 'reports'), where('status', '==', 'pending')));
+    const reports = [];
     
-    // Fetch associated post data from 'community' collection
-    if (reportData.postId) {
-      const postSnap = await getDoc(doc(db, 'community', reportData.postId));
-      if (postSnap.exists()) {
-        postData = { id: postSnap.id, ...postSnap.data() };
+    for (const reportDoc of reportsSnap.docs) {
+      const reportData = reportDoc.data();
+      let postData = null;
+      
+      // Fetch associated post data from 'community' collection
+      if (reportData.postId) {
+        const postSnap = await getDoc(doc(db, 'community', reportData.postId));
+        if (postSnap.exists()) {
+          postData = { id: postSnap.id, ...postSnap.data() };
+        }
       }
+      
+      reports.push({
+        id: reportDoc.id,
+        ...reportData,
+        post: postData
+      });
     }
+    return reports;
+  } catch (err) {
+    console.error('[getReportedPosts] Error:', err);
+    // Fallback: fetch all reports and filter client-side
+    const allSnap = await getDocs(collection(db, 'reports'));
+    const all = allSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const pending = all.filter(r => r.status === 'pending');
     
-    reports.push({
-      id: reportDoc.id,
-      ...reportData,
-      post: postData
-    });
+    const reports = [];
+    for (const report of pending) {
+      let postData = null;
+      if (report.postId) {
+        const postSnap = await getDoc(doc(db, 'community', report.postId));
+        if (postSnap.exists()) {
+          postData = { id: postSnap.id, ...postSnap.data() };
+        }
+      }
+      reports.push({
+        id: report.id,
+        ...report,
+        post: postData
+      });
+    }
+    return reports;
   }
-  return reports;
 }
 
 export async function getAdminStats() {
@@ -143,18 +169,31 @@ export async function getAdminStats() {
 }
 
 export async function getResolvedSubmissions() {
-  const q = query(collection(db, 'submissions'), where('status', 'in', ['approved', 'rejected']));
-  const snap = await getDocs(q);
-  const results = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  
-  // Sort descending by createdAt
-  results.sort((a, b) => {
-    const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
-    const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
-    return timeB - timeA;
-  });
-  
-  return results;
+  try {
+    const q = query(collection(db, 'submissions'), where('status', 'in', ['approved', 'rejected']));
+    const snap = await getDocs(q);
+    const results = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    // Sort descending by createdAt
+    results.sort((a, b) => {
+      const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+      const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+      return timeB - timeA;
+    });
+    
+    return results;
+  } catch (err) {
+    console.error('[getResolvedSubmissions] Error:', err);
+    // Fallback: fetch all submissions and filter client-side
+    const allSnap = await getDocs(collection(db, 'submissions'));
+    const all = allSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const filtered = all.filter(s => ['approved', 'rejected'].includes(s.status));
+    return filtered.sort((a, b) => {
+      const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+      const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+      return timeB - timeA;
+    });
+  }
 }
 
 export async function adminDeleteSubmission(submissionId) {
@@ -287,67 +326,26 @@ export async function updateGlobalSettings(updates) {
 }
 
 export async function adminForceWeeklyReset() {
-  // 1. Fetch top 3 users by weeklyPoints
-  const topQ = query(collection(db, 'leaderboard'), orderBy('weeklyPoints', 'desc'), limit(3));
-  const topSnap = await getDocs(topQ);
+  // Use the server-side API for privileged operations
+  const user = auth.currentUser;
+  if (!user) throw new Error('Not authenticated');
   
-  const rewards = [10000, 5000, 2500];
-  const promises = [];
-  
-  topSnap.docs.forEach((docSnap, index) => {
-    const userId = docSnap.id;
-    const rewardPoints = rewards[index];
-    if (!rewardPoints) return;
-    
-    // Update the main user document
-    const userRef = doc(db, 'users', userId);
-    let updates = {
-      points: increment(rewardPoints),
-      lifetimePoints: increment(rewardPoints),
-      spendableBalance: increment(rewardPoints),
-    };
-    if (index === 0) {
-      updates.unlockedFrames = arrayUnion('frame-champion');
-    }
-    
-    promises.push(updateDoc(userRef, updates));
-    
-    // Add transaction history
-    const txRef = doc(collection(db, 'transactions'));
-    promises.push(setDoc(txRef, {
-      userId: userId,
-      type: 'earned',
-      amount: rewardPoints,
-      description: `Weekly Leaderboard Reward (Rank #${index + 1})`,
-      createdAt: serverTimestamp(),
-    }));
-    
-    // Create notification
-    const notifRef = doc(collection(db, 'notifications'));
-    promises.push(setDoc(notifRef, {
-      userId: userId,
-      type: 'weekly_reward',
-      title: `🏆 You placed #${index + 1} this week!`,
-      body: `You've been awarded ${rewardPoints} bonus points${index === 0 ? ' and an exclusive Champion Frame' : ''} for your amazing eco-efforts!`,
-      read: false,
-      createdAt: serverTimestamp(),
-    }));
+  const token = await user.getIdToken();
+  const res = await fetch('/api/admin.js', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({ action: 'force_weekly_reset' })
   });
   
-  // Wait for rewards to be applied
-  await Promise.all(promises);
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to force weekly reset');
+  }
   
-  // 2. Reset weeklyPoints for all users
-  const usersSnap = await getDocs(collection(db, 'users'));
-  const userUpdates = usersSnap.docs.map(d => updateDoc(d.ref, { weeklyPoints: 0 }));
-  await Promise.all(userUpdates);
-  
-  // 3. Reset weeklyPoints for leaderboard collection
-  const lbSnap = await getDocs(collection(db, 'leaderboard'));
-  const lbUpdates = lbSnap.docs.map(d => updateDoc(d.ref, { weeklyPoints: 0 }));
-  await Promise.all(lbUpdates);
-  
-  return { success: true };
+  return data;
 }
 
 // ─── BULK OPERATIONS ─────────────────────────────────────────────────────────
@@ -394,5 +392,27 @@ export async function adminGetDuplicateTasks() {
 export async function adminDeleteTasksBulk(taskIds) {
   await Promise.all(taskIds.map(id => deleteDoc(doc(db, 'tasks', id))));
   return { deleted: taskIds.length };
+}
+
+export async function adminDeleteUserDeep(userId) {
+  // Delete main docs
+  await deleteDoc(doc(db, 'users', userId));
+  await deleteDoc(doc(db, 'leaderboard', userId));
+  
+  // Delete related collections
+  const collectionsToClean = ['submissions', 'transactions', 'redemptions', 'pointTransactions', 'notifications'];
+  for (const colName of collectionsToClean) {
+    const q = query(collection(db, colName), where('userId', '==', userId));
+    const snap = await getDocs(q);
+    const deletePromises = snap.docs.map(d => deleteDoc(d.ref));
+    await Promise.all(deletePromises);
+  }
+  
+  // Also clean up frame requests if any
+  const frameReqQ = query(collection(db, 'frameRequests'), where('userId', '==', userId));
+  const frameReqSnap = await getDocs(frameReqQ);
+  await Promise.all(frameReqSnap.docs.map(d => deleteDoc(d.ref)));
+
+  return { success: true };
 }
 

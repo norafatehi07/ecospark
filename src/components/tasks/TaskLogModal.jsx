@@ -4,8 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { compressImageToBase64 } from '../../lib/imageUtils';
 import { useAuthStore } from '../../store/authStore';
-import { createSubmission, subscribeSubmission } from '../../services/firestoreService';
-import { awardPointsAndUpdateStreak } from '../../services/firestoreService';
+import { createSubmission, subscribeSubmission, awardPointsAndUpdateStreak } from '../../services/firestoreService';
 import { verifyTaskPhoto } from '../../services/aiService';
 import toast from 'react-hot-toast';
 import PremiumIcon from '../common/PremiumIcon';
@@ -118,17 +117,14 @@ export default function TaskLogModal({ task, onClose, onSuccess }) {
           setStage(status);
           setReason(r || '');
 
-          // Award points on approval.
-          // The server reads the point value from the submission record and
-          // keys the ledger entry on the submission id, so a repeated
-          // onSnapshot callback cannot award twice.
+          // Award points on approval via client
           if (status === 'approved' && profile) {
             try {
-              const earned = task.points ?? 50;
+              const earned = task.points || 50;
               await awardPointsAndUpdateStreak(user.uid, task.id, earned, {
-                co2Saved: task.impact?.co2Saved || 0,
-                waterSaved: task.impact?.waterSaved || 0,
-                treesEquivalent: task.impact?.treesEquivalent || 0,
+                co2Saved: task.co2 || 0,
+                waterSaved: task.water || 0,
+                treesEquivalent: task.waste || 0,
               });
               toast.success(<span>+{earned} points earned! <PremiumIcon icon={Leaf} color="emerald" size={16} /></span>);
             } catch (err) {

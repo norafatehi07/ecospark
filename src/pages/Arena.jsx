@@ -6,17 +6,21 @@ import { generateArenaTrivia } from '../services/aiService';
 import { increment } from 'firebase/firestore';
 import toast from 'react-hot-toast';
 import styles from './Arena.module.css';
-import { Flame, Brain, Target, Zap, Clock, Coins, CheckCircle2, History, Sprout, Swords, Trophy, Lock, Unlock, ChevronRight, Leaf, Star, TrendingUp, Users, AlertCircle, RefreshCw } from 'lucide-react';
+import { Flame, Brain, Target, Zap, Clock, Coins, CheckCircle2, History, Sprout, Swords, Trophy, Lock, Unlock, ChevronRight, Leaf, Star, TrendingUp, Users, AlertCircle, ShieldCheck } from 'lucide-react';
 import PremiumIcon from '../components/common/PremiumIcon';
-import { MOCK_PREDICTIONS, MOCK_TRIVIA } from '../constants/arenaData';
+import { MOCK_TRIVIA } from '../constants/arenaData';
 import { useSettingsStore } from '../store/settingsStore';
 import {
+  subscribeActiveMarkets,
+  subscribeRecentMarkets,
   refreshOracleMarketsIfStale,
+  fetchCryptoPrices,
   placeBetOnMarket,
   settleExpiredMarketsForUser,
   recalculateMultipliers,
   getOptionProbabilities,
   MIN_BET,
+  MAX_BET,
 } from '../services/oracleService';
 
 const WHEEL_SEGMENTS = [
@@ -127,6 +131,166 @@ function WheelSVG({ rotation, isSpinning }) {
   );
 }
 
+// ─── Oracle live helpers ──────────────────────────────────────────────────────
+
+const COINS_STRIP = [
+  { id: 'bitcoin', sym: 'BTC' },
+  { id: 'ethereum', sym: 'ETH' },
+  { id: 'solana', sym: 'SOL' },
+  { id: 'ripple', sym: 'XRP' },
+];
+
+function useNow(intervalMs = 30000) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(t);
+  }, [intervalMs]);
+  return now;
+}
+
+function timeLeft(msLeft) {
+  if (msLeft <= 0) return 'closing now';
+  const d = Math.floor(msLeft / 86400000);
+  const h = Math.floor((msLeft % 86400000) / 3600000);
+  const m = Math.floor((msLeft % 3600000) / 60000);
+  if (d > 0) return `${d}d ${h}h left`;
+  if (h > 0) return `${h}h ${m}m left`;
+  return `${m}m left`;
+}
+
+function fmtUsd(v) {
+  if (v == null) return '';
+  if (v >= 1000) return '$' + Math.round(v).toLocaleString('en-US');
+  if (v >= 1) return '$' + Number(v).toFixed(2);
+  return '$' + Number(v).toFixed(4);
+}
+
+/** One Polymarket-style market card. Odds, volumes and probabilities are
+    recalculated live from the subscribed market doc. */
+function MarketCard({ market, profile, selectedOption, setSelectedOption, betAmounts, setBetAmounts, onPlaceBet, now }) {
+  const msLeft = new Date(market.endTime) - now;
+  const closingSoon = msLeft < 86400000 * 2 && msLeft > 0;
+  const closed = msLeft <= 0;
+  const opts = Array.isArray(market.options) ? market.options : [];
+  const liveOptions = recalculateMultipliers(opts);
+  const probs = getOptionProbabilities(opts);
+  const selOpt = selectedOption[market.id];
+  const selMult = liveOptions.find(o => o.id === selOpt)?.multiplier || 1;
+  const crypto = market.crypto;
+
+  return (
+    <motion.div
+      key={market.id}
+      className={styles.marketCard}
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.97 }}
+      transition={{ duration: 0.3 }}
+      layout
+    >
+      <div className={styles.marketCardGlow} />
+
+      {/* Top row: category + timer */}
+      <div className={styles.marketCardTop}>
+        <span className={styles.marketCategory}>
+          {market.emoji || '🔮'} {market.category || 'Prediction'}
+        </span>
+        <span className={`${styles.marketTimer} ${closingSoon ? styles.marketTimerUrgent : ''}`}>
+          <Clock size={12} /> {closed ? 'closed — settling' : timeLeft(msLeft)}
+        </span>
+      </div>
+
+      <h3 className={styles.marketTitle}>{market.title}</h3>
+      {market.description && <p className={styles.marketDesc}>{market.description}</p>}
+
+      {/* Live crypto price strip */}
+      {crypto && (
+        <div className={styles.livePriceRow}>
+          <span className={styles.liveDot} />
+          <span className={styles.livePriceVal}>{fmtUsd(crypto.basePrice)}</span>
+          <span className={crypto.base24h >= 0 ? styles.liveChgUp : styles.liveChgDown}>
+            <TrendingUp size={12} style={crypto.base24h < 0 ? { transform: 'rotate(180deg)' } : undefined} />
+            {crypto.base24h >= 0 ? '+' : ''}{crypto.base24h}% 24h
+          </span>
+          <span className={styles.liveStrike}>strike {fmtUsd(crypto.level)}</span>
+        </div>
+      )}
+
+      {/* Probability bars — move live with every bet on the board */}
+      <div className={styles.probContainer}>
+        {liveOptions.map((opt, i) => (
+          <div key={opt.id} className={styles.probRow}>
+            <span className={styles.probLabel}>{opt.label}</span>
+            <div className={styles.probBarTrack}>
+              <div
+                className={`${styles.probBar} ${opt.id === 'yes' ? styles.probBarYes : styles.probBarNo}`}
+                style={{ width: `${probs[i] || 0}%` }}
+              />
+            </div>
+            <span className={styles.probPct}>{probs[i] || 0}%</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Volume */}
+      <div className={styles.marketVolume}>
+        <Users size={12} /> {market.betCount || 0} bets ·
+        <Coins size={12} style={{ marginLeft: 4 }} /> {(market.totalStaked || 0).toLocaleString()} pts volume
+      </div>
+
+      {/* Option selector */}
+      <div className={styles.optionSelector}>
+        {liveOptions.map(opt => (
+          <button
+            key={opt.id}
+            className={`${styles.optionBtn} ${selOpt === opt.id ? styles.optionBtnSelected : ''} ${opt.id === 'yes' ? styles.optionBtnYes : styles.optionBtnNo}`}
+            onClick={() => setSelectedOption(p => ({ ...p, [market.id]: p[market.id] === opt.id ? null : opt.id }))}
+            disabled={closed}
+          >
+            <span className={styles.optionLabel}>{opt.label}</span>
+            <span className={styles.optionMult}>{opt.multiplier}x</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Stake input */}
+      <div className={styles.betRow}>
+        <input
+          type="number"
+          placeholder={`${MIN_BET}–${MAX_BET.toLocaleString()} pts`}
+          min={MIN_BET}
+          max={MAX_BET}
+          value={betAmounts[market.id] || ''}
+          onChange={e => setBetAmounts(p => ({ ...p, [market.id]: e.target.value }))}
+          className={styles.stakeInput}
+          disabled={closed}
+        />
+        <button
+          className={styles.betPlaceBtn}
+          onClick={() => onPlaceBet(market)}
+          disabled={!selOpt || !betAmounts[market.id] || closed || !profile}
+        >
+          Stake
+          {selOpt && betAmounts[market.id] >= MIN_BET && (
+            <span className={styles.betPotential}>
+              → {Math.round((parseInt(betAmounts[market.id] || 0) || 0) * selMult).toLocaleString()} pts
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Integrity footer */}
+      <div className={styles.marketSource}>
+        <ShieldCheck size={11} />
+        {market.kind === 'crypto'
+          ? <>Settles on the real CoinGecko price at close — <a href={`https://www.coingecko.com/en/coins/${crypto?.coinId}`} target="_blank" rel="noopener noreferrer">verify feed</a></>
+          : <>Settles from live web evidence with cited sources · unverifiable → auto void + refund</>}
+      </div>
+    </motion.div>
+  );
+}
+
 export default function Arena() {
   const { profile } = useAuthStore();
   const settings = useSettingsStore(s => s.settings) || {};
@@ -149,10 +313,13 @@ export default function Arena() {
   // Oracle
   const [betAmounts, setBetAmounts]     = useState({});
   const [predictions, setPredictions]   = useState([]);
-  const [loadingOracle, setLoadingOracle] = useState(false);
+  const [recentMarkets, setRecentMarkets] = useState([]);
+  const [loadingOracle, setLoadingOracle] = useState(true);
   const [oracleError, setOracleError]   = useState(null);
   const [selectedOption, setSelectedOption] = useState({});
+  const [cryptoPrices, setCryptoPrices] = useState(null);
   const [settling, setSettling]         = useState(false);
+  const now = useNow(30000);
 
   // Trivia
   const [triviaActive, setTriviaActive]     = useState(false);
@@ -174,30 +341,80 @@ export default function Arena() {
   const [stakeAmount, setStakeAmount]   = useState('');
   const [resolvingBetId, setResolvingBetId] = useState(null);
 
-  // Load oracle on tab switch
+  // Oracle — realtime: subscribe to the live market board the first time the
+  // tab is opened, then keep odds/volumes fresh via onSnapshot as bets land.
   useEffect(() => {
-    if (activeTab === 'oracle' && predictions.length === 0) loadPredictions();
+    if (activeTab !== 'oracle') return;
+
+    let unsubActive = null;
+    let unsubRecent = null;
+    let disposed = false;
+    let ticker = null;
+
+    unsubActive = subscribeActiveMarkets((markets) => {
+      if (disposed) return;
+      setPredictions(markets);
+      setLoadingOracle(false);
+      setOracleError(null);
+    }, (err) => {
+      if (disposed) return;
+      console.error('[Oracle] Live board subscription failed:', err);
+      setOracleError('Could not reach the live market board. Check your connection.');
+      setLoadingOracle(false);
+    });
+
+    unsubRecent = subscribeRecentMarkets((markets) => {
+      if (!disposed) setRecentMarkets(markets);
+    }, () => {});
+
+    // Populate with real markets (live crypto prices + grounded events).
+    refreshOracleMarketsIfStale().catch(err => {
+      console.warn('[Oracle] Refresh failed:', err);
+      if (!disposed && predictions.length === 0) {
+        setOracleError('Market generation is temporarily unavailable — retrying automatically.');
+      }
+    });
+
+    // Live price ticker for crypto markets.
+    const loadPrices = () => fetchCryptoPrices()
+      .then(p => { if (!disposed) setCryptoPrices(p); })
+      .catch(() => {});
+    loadPrices();
+    ticker = setInterval(loadPrices, 60000);
+
+    return () => {
+      disposed = true;
+      clearInterval(ticker);
+      unsubActive?.();
+      unsubRecent?.();
+    };
   }, [activeTab]);
 
-  // Auto-settle expired bets when visiting history tab
+  // Auto-settle expired bets from REAL outcomes — on mount and when the user
+  // visits Oracle or History with pending, expired stakes.
   useEffect(() => {
-    if (activeTab === 'history' && profile && !settling) {
-      setSettling(true);
-      settleExpiredMarketsForUser(profile.id, profile)
-        .then(({ settled, pointsAwarded }) => {
-          if (settled.length > 0) {
-            toast.success(
-              pointsAwarded > 0
-                ? `🎉 ${settled.length} market(s) settled! You won ${pointsAwarded.toLocaleString()} pts`
-                : `${settled.length} market(s) settled. Better luck next time!`,
-              { duration: 5000 }
-            );
-          }
-        })
-        .catch(err => console.error('[Oracle] Auto-settle failed:', err))
-        .finally(() => setSettling(false));
-    }
-  }, [activeTab]);
+    if (!profile || settling) return;
+    if (activeTab !== 'oracle' && activeTab !== 'history') return;
+    const hasPendingExpired = (profile.arenaBets || []).some(
+      b => b.status === 'pending' && b.endTime && new Date(b.endTime) <= new Date()
+    );
+    if (!hasPendingExpired) return;
+
+    setSettling(true);
+    settleExpiredMarketsForUser(profile.id, profile)
+      .then(({ settled, pointsAwarded, refunded }) => {
+        if (!settled.length) return;
+        if (pointsAwarded > 0) {
+          toast.success(`🎉 ${settled.length} market(s) settled — you won ${pointsAwarded.toLocaleString()} pts from real outcomes!`, { duration: 6000 });
+        } else if (refunded > 0) {
+          toast(`${refunded.toLocaleString()} pts refunded — market(s) voided (outcome not verified)`, { icon: '🛡️', duration: 6000 });
+        } else {
+          toast(`${settled.length} market(s) settled from verified real-world outcomes. Better luck next time!`, { duration: 5000 });
+        }
+      })
+      .catch(err => console.error('[Oracle] Auto-settle failed:', err))
+      .finally(() => setSettling(false));
+  }, [activeTab, profile?.arenaBets?.length]);
 
   const deductPoints = async (amount) => {
     if (!profile || (profile.spendableBalance || 0) < amount) {
@@ -219,27 +436,12 @@ export default function Arena() {
   };
 
   // ── ORACLE ──────────────────────────────────────────────────────────────────
-  const loadPredictions = async () => {
-    setLoadingOracle(true);
-    setOracleError(null);
-    try {
-      const markets = await refreshOracleMarketsIfStale();
-      setPredictions(markets);
-    } catch (err) {
-      console.error('[Oracle] Load failed:', err);
-      // Use eco-focused fallbacks
-      setPredictions(MOCK_PREDICTIONS);
-      setOracleError('Using cached markets — live refresh failed.');
-    } finally {
-      setLoadingOracle(false);
-    }
-  };
-
   const handlePlaceBet = async (prediction) => {
     const optId = selectedOption[prediction.id];
     if (!optId) { toast.error('Select YES or NO first'); return; }
     const amount = parseInt(betAmounts[prediction.id] || 0);
     if (amount < MIN_BET) { toast.error(`Minimum bet is ${MIN_BET} pts`); return; }
+    if (amount > MAX_BET) { toast.error(`Maximum bet is ${MAX_BET.toLocaleString()} pts per market`); return; }
     if (!profile) { toast.error('Please sign in to bet'); return; }
 
     const tid = toast.loading('Placing your bet...');
@@ -255,14 +457,8 @@ export default function Arena() {
         `✅ Bet placed! ${amount} pts on ${optId.toUpperCase()} @ ${multiplier}x → potential ${potentialWin.toLocaleString()} pts`,
         { id: tid, duration: 5000 }
       );
-      // Refresh market odds locally
-      setPredictions(prev => prev.map(p => {
-        if (p.id !== prediction.id) return p;
-        const newOptions = p.options.map(o =>
-          o.id === optId ? { ...o, totalStaked: (o.totalStaked || 0) + amount } : o
-        );
-        return { ...p, options: newOptions, totalStaked: (p.totalStaked || 0) + amount, betCount: (p.betCount || 0) + 1 };
-      }));
+      // Odds update automatically — the live board subscription pushes the
+      // new totals the moment the write lands, for everyone, in realtime.
       setBetAmounts(prev => ({ ...prev, [prediction.id]: '' }));
       setSelectedOption(prev => ({ ...prev, [prediction.id]: null }));
     } catch (err) {
@@ -461,7 +657,7 @@ export default function Arena() {
               <div className={styles.loadingPanel}>
                 <div className={styles.loadingOrb} />
                 <h3>Consulting the Oracle...</h3>
-                <p>Fetching live eco prediction markets.</p>
+                <p>Connecting to the live market board.</p>
               </div>
             ) : (
               <div>
@@ -470,16 +666,12 @@ export default function Arena() {
                   <div className={styles.oracleHeaderLeft}>
                     <span className={styles.oracleLiveBadge}>
                       <span className={styles.oracleLiveDot} />
-                      LIVE MARKETS
+                      LIVE · REALTIME
                     </span>
                     <span className={styles.oracleSubtitle}>
-                      AI-powered eco prediction markets · Settle automatically
+                      Real markets on live crypto prices & verified events · settles from evidence, never guesses
                     </span>
                   </div>
-                  <button className={styles.oracleRefreshBtn} onClick={loadPredictions}>
-                    <RefreshCw size={14} />
-                    Refresh
-                  </button>
                 </div>
 
                 {oracleError && (
@@ -489,110 +681,85 @@ export default function Arena() {
                   </div>
                 )}
 
-                <div className={styles.marketsGrid}>
-                  {predictions.map(pred => {
-                    const liveOptions = recalculateMultipliers(pred.options || []);
-                    const probs = getOptionProbabilities(pred.options || []);
-                    const msLeft = new Date(pred.endTime) - new Date();
-                    const daysLeft = Math.max(0, Math.floor(msLeft / 86400000));
-                    const hoursLeft = Math.max(0, Math.floor((msLeft % 86400000) / 3600000));
-                    const closingSoon = msLeft < 86400000 * 2;
-                    const selOpt = selectedOption[pred.id];
+                {/* Live crypto price strip */}
+                {cryptoPrices && (
+                  <div className={styles.cryptoStrip}>
+                    {COINS_STRIP.map(c => {
+                      const p = cryptoPrices[c.id];
+                      if (!p?.usd) return null;
+                      const chg = p.usd_24h_change || 0;
+                      return (
+                        <div key={c.id} className={styles.cryptoChip}>
+                          <span className={styles.cryptoSym}>{c.sym}</span>
+                          <span className={styles.cryptoVal}>{fmtUsd(p.usd)}</span>
+                          <span className={chg >= 0 ? styles.liveChgUp : styles.liveChgDown}>
+                            {chg >= 0 ? '+' : ''}{chg.toFixed(1)}%
+                          </span>
+                        </div>
+                      );
+                    })}
+                    <span className={styles.cryptoFeed}>Feed: CoinGecko · updates live</span>
+                  </div>
+                )}
 
-                    return (
-                      <motion.div
+                <AnimatePresence>
+                  <div className={styles.marketsGrid}>
+                    {predictions.map(pred => (
+                      <MarketCard
                         key={pred.id}
-                        className={styles.marketCard}
-                        initial={{ opacity: 0, y: 16 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3 }}
-                      >
-                        {/* Card glow */}
-                        <div className={styles.marketCardGlow} />
+                        market={{
+                          ...pred,
+                          crypto: pred.crypto && cryptoPrices?.[pred.crypto.coinId]
+                            ? { ...pred.crypto, basePrice: cryptoPrices[pred.crypto.coinId].usd, base24h: Math.round((cryptoPrices[pred.crypto.coinId].usd_24h_change || 0) * 10) / 10 }
+                            : pred.crypto,
+                        }}
+                        profile={profile}
+                        selectedOption={selectedOption}
+                        setSelectedOption={setSelectedOption}
+                        betAmounts={betAmounts}
+                        setBetAmounts={setBetAmounts}
+                        onPlaceBet={handlePlaceBet}
+                        now={now}
+                      />
+                    ))}
+                  </div>
+                </AnimatePresence>
 
-                        {/* Top row: category + timer */}
-                        <div className={styles.marketCardTop}>
-                          <span className={styles.marketCategory}>
-                            {pred.emoji || '🔮'} {pred.category}
+                {predictions.length === 0 && !oracleError && (
+                  <div className={styles.emptyState}>
+                    <Target size={64} style={{ opacity: 0.3, marginBottom: '16px' }} />
+                    <p>New real markets are being generated from live data — check back shortly.</p>
+                  </div>
+                )}
+
+                {/* Recently settled / voided — proves settlement is real */}
+                {recentMarkets.length > 0 && (
+                  <div className={styles.recentBlock}>
+                    <h3 className={styles.recentTitle}>
+                      <ShieldCheck size={16} /> Recently resolved — settled from real-world evidence
+                    </h3>
+                    {recentMarkets.map(m => (
+                      <div key={m.id} className={styles.recentRow}>
+                        <span className={m.status === 'settled' ? styles.recentSettled : styles.recentVoided}>
+                          {m.status === 'settled' ? `${(m.winner || '').toUpperCase()} WON` : 'VOIDED · REFUNDED'}
+                        </span>
+                        <span className={styles.recentText}>{m.title}</span>
+                        {m.settleReason && <span className={styles.recentReason}>{m.settleReason}</span>}
+                        {(m.settleSources || []).length > 0 && (
+                          <span className={styles.recentSources}>
+                            {m.settleSources.slice(0, 2).map((u, i) => (
+                              <a key={i} href={u} target="_blank" rel="noopener noreferrer">source {i + 1}</a>
+                            ))}
                           </span>
-                          <span className={`${styles.marketTimer} ${closingSoon ? styles.marketTimerUrgent : ''}`}>
-                            <Clock size={12} />
-                            {daysLeft > 0 ? `${daysLeft}d ${hoursLeft}h` : `${hoursLeft}h`} left
-                          </span>
-                        </div>
-
-                        {/* Title */}
-                        <h3 className={styles.marketTitle}>{pred.title}</h3>
-                        <p className={styles.marketDesc}>{pred.description}</p>
-
-                        {/* Probability bars */}
-                        <div className={styles.probContainer}>
-                          {liveOptions.map((opt, i) => (
-                            <div key={opt.id} className={styles.probRow}>
-                              <span className={styles.probLabel}>{opt.label}</span>
-                              <div className={styles.probBarTrack}>
-                                <div
-                                  className={`${styles.probBar} ${opt.id === 'yes' ? styles.probBarYes : styles.probBarNo}`}
-                                  style={{ width: `${probs[i] || 0}%` }}
-                                />
-                              </div>
-                              <span className={styles.probPct}>{probs[i] || 0}%</span>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Volume */}
-                        <div className={styles.marketVolume}>
-                          <Users size={12} />
-                          {(pred.betCount || 0)} bets ·
-                          <Coins size={12} style={{ marginLeft: 4 }} />
-                          {(pred.totalStaked || 0).toLocaleString()} pts vol
-                        </div>
-
-                        {/* Option selector */}
-                        <div className={styles.optionSelector}>
-                          {liveOptions.map(opt => (
-                            <button
-                              key={opt.id}
-                              className={`${styles.optionBtn} ${selOpt === opt.id ? styles.optionBtnSelected : ''} ${opt.id === 'yes' ? styles.optionBtnYes : styles.optionBtnNo}`}
-                              onClick={() => setSelectedOption(p => ({ ...p, [pred.id]: opt.id }))}
-                            >
-                              <span className={styles.optionLabel}>{opt.label}</span>
-                              <span className={styles.optionMult}>{opt.multiplier}x</span>
-                            </button>
-                          ))}
-                        </div>
-
-                        {/* Bet input + place */}
-                        <div className={styles.betRow}>
-                          <input
-                            type="number"
-                            placeholder={`Min ${MIN_BET} pts...`}
-                            min={MIN_BET}
-                            value={betAmounts[pred.id] || ''}
-                            onChange={e => setBetAmounts(p => ({ ...p, [pred.id]: e.target.value }))}
-                            className={styles.stakeInput}
-                          />
-                          <button
-                            className={styles.betPlaceBtn}
-                            onClick={() => handlePlaceBet(pred)}
-                            disabled={!selOpt || !betAmounts[pred.id]}
-                          >
-                            Stake
-                            {selOpt && betAmounts[pred.id] >= MIN_BET && (
-                              <span className={styles.betPotential}>
-                                → {Math.round(parseInt(betAmounts[pred.id] || 0) * (liveOptions.find(o => o.id === selOpt)?.multiplier || 1)).toLocaleString()} pts
-                              </span>
-                            )}
-                          </button>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )
           )}
+
 
 
           {/* ═══════════════ TRIVIA ═══════════════ */}
@@ -791,22 +958,32 @@ export default function Arena() {
                         <h4 className={styles.betTitle}>{bet.title}</h4>
                         <div className={styles.betMeta}>
                           <span>Staked on: <strong style={{ color: 'var(--color-primary)' }}>{bet.option}</strong></span>
-                          <span>{bet.amount} pts · {bet.multiplier}x · Potential: {bet.potentialWin} pts</span>
+                          <span>{bet.amount} pts · {bet.multiplier ?? bet.multiplierAtBet}x · Potential: {bet.potentialWin} pts</span>
                           <span style={{ color: 'var(--color-text-tertiary)', fontSize: '0.8rem' }}>{new Date(bet.date).toLocaleString()}</span>
                         </div>
                         {bet.resultReason && <p className={styles.betReason}>{bet.resultReason}</p>}
+                        {bet.settlePrice != null && bet.kind === 'crypto' && (
+                          <p className={styles.betReason}>Settled at {fmtUsd(bet.settlePrice)} (real market price)</p>
+                        )}
                       </div>
                       <div className={styles.betCardRight}>
                         {bet.status === 'pending' ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end' }}>
                             <span className={styles.pendingBadge}>PENDING</span>
                             <span style={{ fontSize: '0.8rem', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
-                              Auto-settles upon expiry
+                              Auto-settles from real outcomes at expiry
+                            </span>
+                          </div>
+                        ) : bet.status === 'voided' ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
+                            <span className={styles.voidedBadge}>VOIDED</span>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-tertiary)' }}>
+                              <ShieldCheck size={11} style={{ verticalAlign: '-2px' }} /> {bet.amount} pts refunded
                             </span>
                           </div>
                         ) : (
                           <span className={bet.status === 'won' ? styles.wonBadge : styles.lostBadge}>
-                            {bet.status === 'won' ? 'WON' : 'LOST'}
+                            {bet.status === 'won' ? `WON +${bet.potentialWin}` : 'LOST'}
                           </span>
                         )}
                       </div>

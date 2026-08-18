@@ -220,7 +220,13 @@ export default function Home() {
               icon={<Flame color="var(--color-error)" size={24} />}
               label="Day Streak"
               value={profile?.streak || 0}
-              sublabel={profile?.longestStreak ? `Longest: ${profile.longestStreak} days` : 'Start your streak today!'}
+              sublabel={
+                profile?.lastTaskDate && new Date().toDateString() === profile.lastTaskDate.toDate().toDateString()
+                  ? 'Task completed today! 🔥'
+                  : profile?.longestStreak 
+                    ? `Longest: ${profile.longestStreak} days` 
+                    : 'Do a task to start!'
+              }
               color="var(--color-streak)"
               to="/tasks"
             />

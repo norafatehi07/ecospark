@@ -11,6 +11,50 @@ import { db } from '../lib/firebase';
 
 // ─── USER PROFILES ──────────────────────────────────────────────────────────
 
+export async function awardPointsAndUpdateStreak(userId, taskId, points, impact = {}) {
+  const userRef = doc(db, 'users', userId);
+  const snap = await getDoc(userRef);
+  
+  if (!snap.exists()) throw new Error('User not found');
+  
+  const data = snap.data();
+  const now = new Date();
+  let newStreak = data.streak || 0;
+  
+  if (data.lastTaskDate) {
+    const lastDate = data.lastTaskDate.toDate();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const lastTaskDay = new Date(lastDate.getFullYear(), lastDate.getMonth(), lastDate.getDate());
+    
+    const diffTime = today.getTime() - lastTaskDay.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 1) newStreak += 1;
+    else if (diffDays > 1) newStreak = 1;
+  } else {
+    newStreak = 1;
+  }
+  
+  const longestStreak = Math.max(newStreak, data.longestStreak || 0);
+
+  await updateDoc(userRef, {
+    points: increment(points),
+    lifetimePoints: increment(points),
+    spendableBalance: increment(points),
+    streak: newStreak,
+    longestStreak,
+    lastTaskDate: serverTimestamp(),
+    totalTasksCompleted: increment(1),
+    weeklyPoints: increment(points),
+    totalCO2Saved: increment(impact.co2Saved || 0),
+    totalWaterSaved: increment(impact.waterSaved || 0),
+    totalWasteSaved: increment(impact.treesEquivalent || 0),
+    updatedAt: serverTimestamp()
+  });
+  
+  return { points, newStreak };
+}
+
 export async function incrementGlobalUserCount() {
   try {
     const statsRef = doc(db, 'settings', 'stats');
@@ -49,7 +93,6 @@ export async function createUserProfile(uid, data) {
     badges: [],
     unlockedFrames: [],
     activeFrame: null,
-    role: 'student',
     groupId: null,
     referralCode: `ECO-${uid.slice(0, 6).toUpperCase()}`,
     referredBy: null,
@@ -228,27 +271,40 @@ export async function getUserSubmissions(userId, limitCount = 20) {
 }
 
 export async function getFlaggedSubmissions(groupId = null) {
-  let q = query(
-    collection(db, 'submissions'),
-    where('status', 'in', ['flagged', 'pending'])
-  );
-  if (groupId) {
-    q = query(
+  try {
+    let q = query(
       collection(db, 'submissions'),
-      where('status', 'in', ['flagged', 'pending']),
-      where('groupId', '==', groupId)
+      where('status', 'in', ['flagged', 'pending'])
     );
+    if (groupId) {
+      q = query(
+        collection(db, 'submissions'),
+        where('status', 'in', ['flagged', 'pending']),
+        where('groupId', '==', groupId)
+      );
+    }
+    const snap = await getDocs(q);
+    let results = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    
+    results.sort((a, b) => {
+      const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+      const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+      return timeB - timeA;
+    });
+    
+    return results;
+  } catch (err) {
+    console.error('[getFlaggedSubmissions] Error:', err);
+    // Fallback: fetch all submissions and filter client-side
+    const allSnap = await getDocs(collection(db, 'submissions'));
+    const all = allSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const filtered = all.filter(s => ['flagged', 'pending'].includes(s.status));
+    return filtered.sort((a, b) => {
+      const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+      const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+      return timeB - timeA;
+    });
   }
-  const snap = await getDocs(q);
-  let results = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  
-  results.sort((a, b) => {
-    const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
-    const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
-    return timeB - timeA;
-  });
-  
-  return results;
 }
 
 export async function updateSubmissionStatus(submissionId, status, extra = {}) {
@@ -260,70 +316,7 @@ export async function updateSubmissionStatus(submissionId, status, extra = {}) {
 }
 
 // ─── STREAKS & POINTS ─────────────────────────────────────────────────────────
-
-export async function awardPointsAndUpdateStreak(userId, taskId, points, impact = {}) {
-  const userRef = doc(db, 'users', userId);
-  await runTransaction(db, async (tx) => {
-    const userSnap = await tx.get(userRef);
-    if (!userSnap.exists()) throw new Error('User not found');
-
-    const user = userSnap.data();
-    const today = new Date().toDateString();
-    const lastDate = user.lastActivityDate?.toDate?.()?.toDateString?.() || null;
-
-    let newStreak = user.streak || 0;
-    let longestStreak = user.longestStreak || 0;
-
-    if (lastDate === today) {
-      // Already active today — don't increment streak
-    } else if (lastDate === new Date(Date.now() - 86400000).toDateString()) {
-      // Consecutive day
-      newStreak += 1;
-      longestStreak = Math.max(longestStreak, newStreak);
-    } else {
-      // Streak broken or first ever
-      newStreak = 1;
-    }
-
-    tx.update(userRef, {
-      points: increment(points),
-      lifetimePoints: increment(points),
-      weeklyPoints: increment(points),
-      spendableBalance: increment(points),
-      streak: newStreak,
-      longestStreak,
-      lastActivityDate: serverTimestamp(),
-      totalTasksCompleted: increment(1),
-      totalCO2Saved: increment(impact.co2 || 0),
-      totalWaterSaved: increment(impact.water || 0),
-      totalWasteSaved: increment(impact.waste || 0),
-      updatedAt: serverTimestamp(),
-    });
-
-    // Update global leaderboard entry with current profile data
-    const lbRef = doc(db, 'leaderboard', userId);
-    tx.set(lbRef, {
-      userId,
-      displayName: user.displayName,
-      photoURL: user.photoURL || null,
-      showOnLeaderboard: user.showOnLeaderboard ?? true,
-      points: increment(points),
-      weeklyPoints: increment(points),
-      streak: newStreak,
-      groupId: user.groupId || null,
-      updatedAt: serverTimestamp(),
-    }, { merge: true });
-
-    const txRef = doc(collection(db, 'transactions'));
-    tx.set(txRef, {
-      userId,
-      type: 'earned',
-      amount: points,
-      description: 'Completed a task',
-      createdAt: serverTimestamp(),
-    });
-  });
-}
+// Legacy streak and point updating moved to backend.
 
 // ─── LEADERBOARD ──────────────────────────────────────────────────────────────
 
@@ -407,91 +400,8 @@ export async function getRewards() {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-export async function redeemReward(userId, rewardId, pointCost) {
-  const userRef = doc(db, 'users', userId);
-  await runTransaction(db, async (tx) => {
-    const userSnap = await tx.get(userRef);
-    if (!userSnap.exists()) throw new Error('User not found');
-    const user = userSnap.data();
-    const balance = user.spendableBalance ?? user.points ?? 0;
-    if (balance < pointCost) throw new Error('Insufficient points');
 
-    let typeKey;
-    if (rewardId.startsWith('frame-')) typeKey = 'frames';
-    else if (rewardId.startsWith('glow-')) typeKey = 'glows';
-    else if (rewardId.startsWith('comp-')) typeKey = 'companions';
-    else if (rewardId.startsWith('bg-')) typeKey = 'backgrounds';
-    else if (rewardId.startsWith('entry-')) typeKey = 'entries';
-    else typeKey = 'misc';
-
-    const isFrame = typeKey === 'frames';
-
-    tx.update(userRef, {
-      spendableBalance: increment(-pointCost),
-      [isFrame ? 'unlockedFrames' : `inventory.${typeKey}`]: arrayUnion(rewardId),
-      updatedAt: serverTimestamp(),
-    });
-
-    const redemptionRef = doc(collection(db, 'redemptions'));
-    tx.set(redemptionRef, {
-      userId,
-      rewardId,
-      pointCost,
-      redeemedAt: serverTimestamp(),
-    });
-
-    const txRef = doc(collection(db, 'transactions'));
-    tx.set(txRef, {
-      userId,
-      type: 'spent',
-      amount: -pointCost,
-      description: `Redeemed ${rewardId.replace('frame-', '').replace(/-/g, ' ')}`,
-      createdAt: serverTimestamp(),
-    });
-  });
-}
-
-export async function equipReward(userId, type, rewardId) {
-  const userRef = doc(db, 'users', userId);
-  const lbRef = doc(db, 'leaderboard', userId);
-  
-  const updateData = { updatedAt: serverTimestamp() };
-  if (type === 'frame') {
-    updateData.activeFrame = rewardId;
-    updateData['equipped.frame'] = rewardId;
-  } else {
-    updateData[`equipped.${type}`] = rewardId;
-  }
-
-  await updateDoc(userRef, updateData);
-  
-  try {
-    await updateDoc(lbRef, updateData);
-  } catch {
-    // Leaderboard doc might not exist yet, that's fine
-  }
-}
-
-export async function unequipReward(userId, type) {
-  const userRef = doc(db, 'users', userId);
-  const lbRef = doc(db, 'leaderboard', userId);
-  
-  const updateData = { updatedAt: serverTimestamp() };
-  if (type === 'frame') {
-    updateData.activeFrame = null;
-    updateData['equipped.frame'] = null;
-  } else {
-    updateData[`equipped.${type}`] = null;
-  }
-
-  await updateDoc(userRef, updateData);
-  
-  try {
-    await updateDoc(lbRef, updateData);
-  } catch {
-    // Leaderboard doc might not exist yet
-  }
-}
+// Legacy economy functions removed. See economyService.js.
 
 export async function requestAdminFrame(userId, frameId, displayName) {
   await addDoc(collection(db, 'frameRequests'), {
