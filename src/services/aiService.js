@@ -279,93 +279,192 @@ Do NOT include any extra text, only the JSON object.`
   }
 }
 
-/**
- * Generate real-time Oracle Prediction Markets — eco/sustainability focused.
- * Uses Gemini Flash for current eco news awareness.
- * Returns 8–12 markets. 70% sustainability/ESG, 30% green-adjacent.
- */
-export async function generateOracleMarkets() {
-  const today = new Date().toISOString().slice(0, 10);
-  const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
+// ─── ORACLE AI (live web grounding) ─────────────────────────────────────────
+//
+// Markets and settlements are grounded in the LIVE web — never invented from
+// the model's stale memory, never random. Two layers:
+//
+//  1. REST calls to Gemini with the `google_search` tool (search grounding).
+//     The JS SDK does not expose grounding, so these go through fetch
+//     directly. Models are tried in order; older models silently ignore the
+//     grounding tool, so only the listed modern models are used here.
+//  2. Pure API facts (CoinGecko crypto prices) bypass AI entirely — see
+//     oracleService.settleCryptoMarket.
 
-  // Try Gemini Flash first (better eco news awareness)
-  if (geminiKey) {
-    try {
-      const { GoogleGenerativeAI } = await import('@google/generative-ai');
-      const genAI = new GoogleGenerativeAI(geminiKey);
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+function geminiEndpoint(modelName) {
+  const key = import.meta.env.VITE_GEMINI_API_KEY;
+  return `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${key}`;
+}
 
-      const prompt = `Today is ${today}. You are the AI engine for EcoSpark, a sustainability prediction market platform similar to Polymarket.
+const GROUNDED_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
 
-Generate exactly 10 prediction markets. Rules:
-- 7 must be about sustainability, climate, green energy, ESG stocks, or eco policy
-- 3 can be about EV companies, carbon markets, renewable energy stocks, or green tech
-- All must be binary YES/NO questions that can be objectively settled
-- Markets should resolve within 2–14 days from today
-- Use REAL, CURRENT eco topics from 2026 — e.g. Tesla stock levels, solar capacity targets, carbon credit prices, UN climate pledges, EV adoption rates, green energy milestones
-- Odds must reflect realistic probability (popular outcome = lower multiplier, unlikely = higher multiplier)
-- Include the endTime as ISO 8601 string (2 to 14 days from today)
-
-Examples of GOOD markets:
-- "Will Tesla (TSLA) stock close above $250 by Aug 15, 2026?"
-- "Will India's renewable energy capacity exceed 220 GW by end of August 2026?"
-- "Will the EU carbon credit price stay above €60 per tonne this week?"
-- "Will global EV sales exceed 1.2 million units in July 2026?"
-- "Will Adani Green Energy hit its 10 GW solar milestone by Q3 2026?"
-
-Return ONLY a valid JSON array. No markdown, no explanation. Schema:
-[
-  {
-    "id": "mkt1",
-    "title": "Will Tesla (TSLA) stock close above $250 by Aug 10, 2026?",
-    "description": "Tesla shares have been volatile amid EV demand news. Analysts are split on near-term direction.",
-    "category": "Green Stocks",
-    "emoji": "📈",
-    "tags": ["tesla", "ev", "stocks"],
-    "endTime": "2026-08-10T00:00:00.000Z",
-    "options": [
-      { "id": "yes", "label": "YES", "multiplier": 1.7 },
-      { "id": "no", "label": "NO", "multiplier": 2.1 }
-    ]
+/** Extract readable source citations from a grounded Gemini response. */
+function extractGroundingSources(data) {
+  const chunks = data?.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+  const seen = new Set();
+  const sources = [];
+  for (const c of chunks) {
+    const url = c?.web?.uri;
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    sources.push({ title: (c.web.title || url).slice(0, 120), url: url.slice(0, 500) });
+    if (sources.length >= 4) break;
   }
-]`;
+  return sources;
+}
 
-      const result = await model.generateContent(prompt);
-      const text = result.response.text();
-      const jsonStr = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(jsonStr);
-      if (Array.isArray(parsed) && parsed.length >= 5) return parsed;
-    } catch (geminiErr) {
-      console.warn('[Oracle] Gemini market gen failed, falling back to Groq:', geminiErr.message);
+/**
+ * Call Gemini with Google Search grounding. Returns { text, sources }.
+ * Throws if no model succeeds (caller decides fallback behaviour).
+ */
+export async function geminiSearchGenerate(prompt) {
+  const key = import.meta.env.VITE_GEMINI_API_KEY;
+  if (!key) throw new Error('Gemini key missing');
+
+  let lastErr = null;
+  for (const model of GROUNDED_MODELS) {
+    try {
+      const res = await fetch(geminiEndpoint(model), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          tools: [{ google_search: {} }],
+        }),
+      });
+      if (!res.ok) {
+        lastErr = new Error(`${model} HTTP ${res.status}`);
+        continue;
+      }
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts
+        ?.map((p) => p.text || '')
+        .join('') || '';
+      if (!text.trim()) {
+        lastErr = new Error(`${model} returned no text`);
+        continue;
+      }
+      return { text, sources: extractGroundingSources(data) };
+    } catch (err) {
+      lastErr = err;
     }
   }
+  throw lastErr || new Error('grounded generation failed');
+}
 
-  // Fallback: Groq
-  const apiKey = import.meta.env.VITE_GROQ_API_KEY;
-  if (!apiKey) throw new Error('No AI API key available');
+function stripJson(str) {
+  return String(str).replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+}
 
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{
-        role: 'system',
-        content: `Today is ${today}. Generate 10 eco sustainability prediction market questions for EcoSpark.
-Focus: green stocks (Tesla, BYD, Vestas), renewable energy targets, carbon markets, EV adoption, climate policy.
-All must be binary YES/NO, resolve in 2-14 days. Include realistic multipliers (1.1x–4.0x).
-Return ONLY a valid JSON array. Schema per item:
-{"id":"mkt1","title":"...","description":"...","category":"Green Stocks","emoji":"📈","tags":[],"endTime":"ISO date","options":[{"id":"yes","label":"YES","multiplier":1.8},{"id":"no","label":"NO","multiplier":2.0}]}`
-      }],
-      temperature: 0.9,
+/**
+ * Generate REAL, currently-live prediction markets.
+ *
+ * Gemini sees the live web (search grounding), so the topics it proposes are
+ * events actually happening right now — not training-data memories. Markets
+ * that still fail strict objectivity checks are dropped by the caller; the
+ * caller always mixes in price-verified crypto markets so the board is never
+ * fake even if generation degrades.
+ *
+ * @param {Array<string>} avoidTitles - existing market titles to skip
+ */
+export async function generateOracleMarkets(avoidTitles = []) {
+  const today = new Date().toISOString().slice(0, 10);
+  const avoid = avoidTitles.length
+    ? `Already-live markets you must NOT duplicate (by idea):\n${avoidTitles.map((t) => `- ${t}`).join('\n')}\n\n`
+    : '';
+
+  const prompt = `You power a real prediction market platform (Polymarket-style). Today is ${today}. You have live Google Search results — use ONLY facts and events that are currently happening.
+
+${avoid}Propose 6 REAL event markets with these hard rules:
+- Every event must be CURRENT and time-bound, settling within 2–10 days of today.
+- Every question must be objectively checkable against public records at the deadline: an official announcement, an official statistic release, a government report, a public filing, or a verifiable milestone. No subjective or popularity questions.
+- Prefer sustainability, climate, energy, EV, and green-economy events; green tech/finance allowed.
+- NEVER propose crypto or stock price markets — those are generated separately from live price feeds.
+- Each needs a "resolutionQuery": the exact factual question the settlement oracle must verify at expiry, including the date and the official source to check.
+
+Examples of the right SHAPE (do not reuse these exact events):
+- "Will the IEA publish its updated global solar capacity forecast by Aug 22, 2026?"
+- "Will India's Ministry of New and Renewable Energy announce new tender awards before Aug 25, 2026?"
+- "Will the EU approve the pending nature-restoration funding package before Aug 28, 2026?"
+
+Return ONLY a JSON array (no markdown), each item:
+{"title":"short yes/no question with the exact date","description":"1-2 sentences of current real context","category":"Renewable Energy","resolutionQuery":"exact factual question to verify at expiry, with date and official source","endTime":"ISO 8601, 2-10 days from today"}`;
+
+  const { text, sources } = await geminiSearchGenerate(prompt);
+  const parsed = JSON.parse(stripJson(text));
+  if (!Array.isArray(parsed)) throw new Error('grounded generation returned non-array');
+
+  const now = Date.now();
+  const valid = parsed
+    .filter((m) => m && typeof m.title === 'string' && typeof m.resolutionQuery === 'string')
+    .filter((m) => {
+      const t = new Date(m.endTime).getTime();
+      return Number.isFinite(t) && t > now + 24 * 3600 * 1000 && t < now + 14 * 86400 * 1000;
     })
-  });
+    .slice(0, 6)
+    .map((m, i) => ({
+      id: `ai${i + 1}`,
+      kind: 'event',
+      title: m.title.slice(0, 200),
+      description: (m.description || '').slice(0, 300),
+      category: (m.category || 'Climate & Policy').slice(0, 40),
+      resolutionQuery: m.resolutionQuery.slice(0, 400),
+      endTime: new Date(m.endTime).toISOString(),
+      sources,
+    }));
 
-  if (!response.ok) throw new Error('Failed to generate oracle markets');
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
-  const jsonStr = content.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
-  return JSON.parse(jsonStr);
+  return valid;
+}
+
+/**
+ * Settle a real-world event market by re-searching the live web at expiry.
+ *
+ * The model must ground its answer in current sources and declare confidence.
+ * Only "decided" verdicts settle the market; anything less returns
+ * { result: 'undecided' } and the caller voids + refunds — a market is never
+ * paid out on a guess.
+ *
+ * @param {{resolutionQuery?: string, title: string, endTime: string}} market
+ */
+export async function settleOracleMarket(market) {
+  const endedOn = new Date(market.endTime).toISOString().slice(0, 10);
+  const prompt = `You are the settlement oracle for a real prediction market. Today's date is ${new Date().toISOString().slice(0, 10)}. The market expired on ${endedOn}. Use your LIVE Google Search results to establish what actually happened.
+
+Market: "${market.title}"
+Exact question to verify: ${market.resolutionQuery || market.title}
+
+Rules:
+- Determine the real-world outcome from CURRENT, dated sources. Prefer official sources (government, regulator, agency, exchange, organizer).
+- Answer only about what actually happened by the deadline — never guess, predict, or assume.
+- If sources conflict, are missing, or the event simply hasn't happened yet, you MUST answer "undecided".
+
+Return ONLY JSON (no markdown):
+{"result":"yes"|"no"|"undecided","confidence":0.0-1.0,"reason":"one factual sentence citing what the sources establish","sources":["up to 3 source URLs"]}`;
+
+  const { text, sources: groundingSources } = await geminiSearchGenerate(prompt);
+  const parsed = JSON.parse(stripJson(text));
+
+  if (!parsed || typeof parsed !== 'object') {
+    return { result: 'undecided', confidence: 0, reason: 'Unreadable settlement response', sources: [] };
+  }
+
+  const result = ['yes', 'no', 'undecided'].includes(parsed.result) ? parsed.result : 'undecided';
+  const confidence = Math.min(1, Math.max(0, Number(parsed.confidence) || 0));
+  const rawSources = Array.isArray(parsed.sources) ? parsed.sources : [];
+  const sources = [...rawSources, ...groundingSources.map((s) => s.url)]
+    .filter((u) => typeof u === 'string' && u.startsWith('http'))
+    .slice(0, 4);
+
+  if (result === 'undecided' || confidence < 0.75) {
+    return {
+      result: 'undecided',
+      confidence,
+      reason: (parsed.reason || 'Insufficient live evidence at expiry').slice(0, 300),
+      sources,
+    };
+  }
+
+  return { result, confidence, reason: (parsed.reason || '').slice(0, 300), sources };
 }
 
 /**
@@ -440,65 +539,6 @@ Respond ONLY with a valid JSON array. Schema:
   });
 
   if (!response.ok) throw new Error('Failed to generate trivia');
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
-  const jsonStr = content.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
-  return JSON.parse(jsonStr);
-}
-
-/**
- * Settle an Oracle market using Gemini AI.
- * @param {string} title - Market title
- * @param {string} category - Market category 
- * @param {Array} options - [{id, label}, ...]
- * @returns {{ winnerId: string, reason: string }}
- */
-export async function settleOracleMarket(title, category, options) {
-  const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
-
-  const optionList = options.map(o => `{"id":"${o.id}","label":"${o.label}"}`).join(', ');
-  const prompt = `You are settling a prediction market on EcoSpark, a sustainability platform.
-
-Market: "${title}"
-Category: ${category}
-Options: [${optionList}]
-
-Based on the most likely real-world outcome as of today, determine which option wins.
-Consider: current market data, news, historical trends, and scientific consensus for eco/sustainability topics.
-This is a game platform — you MUST pick a definitive winner.
-
-Respond ONLY with valid JSON:
-{"winnerId": "<option id like 'yes' or 'no'>", "reason": "<1 concise sentence explaining the outcome based on real-world context>"}`;
-
-  if (geminiKey) {
-    try {
-      const { GoogleGenerativeAI } = await import('@google/generative-ai');
-      const genAI = new GoogleGenerativeAI(geminiKey);
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-      const result = await model.generateContent(prompt);
-      const text = result.response.text();
-      const jsonStr = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
-      return JSON.parse(jsonStr);
-    } catch (err) {
-      console.warn('[Oracle] Gemini settlement failed, trying Groq:', err.message);
-    }
-  }
-
-  // Fallback: Groq
-  const apiKey = import.meta.env.VITE_GROQ_API_KEY;
-  if (!apiKey) throw new Error('No AI API key for settlement');
-
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'system', content: prompt }],
-      temperature: 0.7,
-    })
-  });
-
-  if (!response.ok) throw new Error('Oracle settlement API error');
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content;
   const jsonStr = content.replace(/```json?\n?/g, '').replace(/```/g, '').trim();

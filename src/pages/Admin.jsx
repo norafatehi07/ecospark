@@ -3,13 +3,13 @@ import { motion } from 'framer-motion';
 import { useAuthStore } from '../store/authStore';
 import { getFlaggedSubmissions, updateSubmissionStatus, resolveReport, getTasks, getRewards, createNotification, createOrGetChat } from '../services/firestoreService';
 import { adminReviewSubmission } from '../services/economyService';
-import { getAdminUsers, adminUpdateUserPoints, adminUpdateUserProfile, adminAwardFrame, adminBanUser, adminDeletePost, getReportedPosts, getAdminStats, getAdminChartData, getResolvedSubmissions, adminDeleteSubmission, adminCreateTask, adminUpdateTask, adminDeleteTask, adminCreateReward, adminUpdateReward, adminDeleteReward, getGlobalSettings, updateGlobalSettings, getFrameRequests, resolveFrameRequest, adminForceWeeklyReset, adminClearAllPastSubmissions, adminGetDuplicateTasks, adminDeleteTasksBulk } from '../services/adminService';
+import { getAdminUsers, adminUpdateUserPoints, adminUpdateUserProfile, adminAwardFrame, adminBanUser, adminDeletePost, getReportedPosts, getAdminStats, getAdminChartData, getResolvedSubmissions, adminDeleteSubmission, adminCreateTask, adminUpdateTask, adminDeleteTask, adminCreateReward, adminUpdateReward, adminDeleteReward, getGlobalSettings, updateGlobalSettings, getFrameRequests, resolveFrameRequest, adminForceWeeklyReset, adminClearAllPastSubmissions, adminGetDuplicateTasks, adminDeleteTasksBulk, adminDeleteUserDeep } from '../services/adminService';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { Navigate, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styles from './Admin.module.css';
-import { FileText, Shield, Users, Globe, Leaf, Ban, CheckSquare, Sparkles, XCircle, AlertTriangle, Trash2, Inbox, Crown, Diamond, Medal, Save, MoreVertical, Edit2, Coins, Key, MessageSquare } from 'lucide-react';
+import { FileText, Shield, Users, Globe, Leaf, Ban, CheckSquare, Sparkles, XCircle, AlertTriangle, Trash2, Inbox, Crown, Diamond, Medal, Save, MoreVertical, Edit2, Coins, Key, MessageSquare, UserCheck, UserX } from 'lucide-react';
 import PremiumIcon from '../components/common/PremiumIcon';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { REWARDS_DB } from '../constants/rewards';
@@ -64,8 +64,12 @@ export default function Admin() {
     return () => document.removeEventListener('click', handleClick);
   }, []);
 
-  // Role gate
-  if (profile && profile.role !== 'teacher' && profile.role !== 'admin') {
+  // Role gate - check both profile.role and fallback to string checks
+  // Default role to 'student' if undefined/null to prevent unauthorized access
+  const userRole = profile?.role || 'student';
+  const isAuthorized = userRole === 'teacher' || userRole === 'admin' || userRole === 'owner';
+  
+  if (profile && !isAuthorized) {
     return <Navigate to="/" replace />;
   }
 
@@ -113,18 +117,44 @@ export default function Admin() {
   // --- Submissions Logic ---
   const handleDecision = async (sub, status) => {
     try {
-      // Status change, payout and audit entry all happen server-side in one
-      // call. The payout shares its idempotency key with the student's own
-      // claim path, so a submission can never be paid for twice.
-      await adminReviewSubmission({
-        submissionId: sub.id,
-        decision: status,
-        note: status === 'approved' ? 'Manually approved by staff' : 'Manually rejected by staff',
+      const { doc, updateDoc, increment, collection, setDoc, serverTimestamp } = await import('firebase/firestore');
+      const { db } = await import('../lib/firebase');
+      
+      const subRef = doc(db, 'submissions', sub.id);
+      await updateDoc(subRef, {
+        status: status,
+        reviewedAt: serverTimestamp(),
+        reviewerNote: status === 'approved' ? 'Manually approved by staff' : 'Manually rejected by staff'
       });
 
       if (status === 'approved') {
+        const points = sub.points || 50;
+        
+        // Add points and impact stats
+        const userRef = doc(db, 'users', sub.userId);
+        await updateDoc(userRef, {
+          points: increment(points),
+          lifetimePoints: increment(points),
+          spendableBalance: increment(points),
+          totalTasksCompleted: increment(1),
+          totalCO2Saved: increment(sub.co2 || 0),
+          totalWaterSaved: increment(sub.water || 0),
+          totalWasteSaved: increment(sub.waste || 0),
+          updatedAt: serverTimestamp()
+        });
+
+        // Add transaction
+        const txRef = doc(collection(db, 'transactions'));
+        await setDoc(txRef, {
+          userId: sub.userId,
+          type: 'task_reward',
+          amount: points,
+          description: `Task Approved: ${sub.title || 'Task'}`,
+          createdAt: serverTimestamp(),
+        });
+
         await createNotification(sub.userId, 'system', {
-          message: `Your task verification was approved. You've been credited ${sub.points || 50} points.`,
+          message: `Your task verification was approved. You've been credited ${points} points.`,
         });
       }
 
@@ -255,6 +285,23 @@ export default function Admin() {
     }
   };
 
+  const handleDeleteUser = async (user) => {
+    if (!window.confirm(`Are you absolutely sure you want to completely delete ${user.displayName}? This will wipe their leaderboard, tasks, and data from Firestore. (Note: Firebase Auth account will remain active)`)) return;
+    try {
+      await adminDeleteUserDeep(user.id);
+      toast.success('User and all associated data deleted!');
+      loadTabData('users');
+    } catch (err) {
+      toast.error(err.message || 'Failed to delete user');
+    }
+  };
+
+  const handleLoginAsUser = (user) => {
+    if (!window.confirm(`You are entering View-Only mode as ${user.displayName}. You will see their dashboard, but cannot perform actions for them. To return to Admin, simply refresh the page.`)) return;
+    useAuthStore.setState({ profile: user });
+    navigate('/');
+  };
+
   const handleResetPassword = async (email) => {
     if (!window.confirm(`Send password reset email to ${email}?`)) return;
     try {
@@ -366,6 +413,16 @@ export default function Admin() {
       toast.success('Settings saved successfully!');
     } catch (err) {
       toast.error(err.message || 'Failed to save settings');
+    }
+  };
+
+  const handleUpdateRole = async (userId, newRole) => {
+    try {
+      await adminUpdateUserProfile(userId, { role: newRole });
+      setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
+      toast.success(`User role updated to ${newRole}`);
+    } catch (err) {
+      toast.error('Failed to update role: ' + err.message);
     }
   };
 
@@ -502,6 +559,22 @@ export default function Admin() {
                               >
                                 <PremiumIcon icon={Edit2} color="slate" size={16} /> Edit Profile
                               </button>
+                              {(profile?.role === 'owner' || profile?.role === 'admin') && (user.role !== 'admin' && user.role !== 'owner') && (
+                                <button 
+                                  className={styles.dropdownItem} 
+                                  onClick={() => { handleUpdateRole(user.id, 'admin'); setOpenDropdownId(null); }}
+                                >
+                                  <PremiumIcon icon={Shield} color="gold" size={16} /> Promote to Admin
+                                </button>
+                              )}
+                              {(profile?.role === 'owner' || profile?.role === 'admin') && (user.role === 'admin') && (
+                                <button 
+                                  className={styles.dropdownItem} 
+                                  onClick={() => { handleUpdateRole(user.id, 'user'); setOpenDropdownId(null); }}
+                                >
+                                  <PremiumIcon icon={Shield} color="slate" size={16} /> Demote from Admin
+                                </button>
+                              )}
                               <button 
                                 className={styles.dropdownItem} 
                                 onClick={() => { setPointsModal({ open: true, user, amount: 0 }); setOpenDropdownId(null); }}
@@ -516,6 +589,12 @@ export default function Admin() {
                               </button>
                               <button 
                                 className={styles.dropdownItem} 
+                                onClick={() => { handleLoginAsUser(user); setOpenDropdownId(null); }}
+                              >
+                                <PremiumIcon icon={UserCheck} color="emerald" size={16} /> View as User
+                              </button>
+                              <button 
+                                className={styles.dropdownItem} 
                                 onClick={() => { handleOpenMessenger(user.id); setOpenDropdownId(null); }}
                               >
                                 <PremiumIcon icon={MessageSquare} color="primary" size={16} /> Direct Message
@@ -525,6 +604,12 @@ export default function Admin() {
                                 onClick={() => { handleBanUser(user, !user.banned); setOpenDropdownId(null); }}
                               >
                                 <PremiumIcon icon={Ban} color="ruby" size={16} /> {user.banned ? 'Unban User' : 'Ban User'}
+                              </button>
+                              <button 
+                                className={`${styles.dropdownItem} ${styles.danger}`} 
+                                onClick={() => { handleDeleteUser(user); setOpenDropdownId(null); }}
+                              >
+                                <PremiumIcon icon={UserX} color="ruby" size={16} /> Delete User
                               </button>
                             </div>
                           )}
@@ -969,7 +1054,7 @@ export default function Admin() {
           <div className={styles.modalContent}>
             <h3>Edit Points for {pointsModal.user.displayName}</h3>
             <p style={{ fontSize: '14px', color: 'gray', margin: 0 }}>
-              Current Points: {pointsModal.user.points || 0}
+              Current Spendable Balance: {pointsModal.user.spendableBalance ?? pointsModal.user.points ?? 0}
             </p>
             <div className={styles.inputGroup}>
               <label>Amount to Add / Deduct (Use negative numbers to deduct)</label>

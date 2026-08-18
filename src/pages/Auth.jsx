@@ -195,16 +195,26 @@ export default function Auth() {
           </button>
         </div>
 
-        {mode === 'signup' && isSignupDisabled ? (
+        {settings?.maintenanceMode && (
+          <div style={{ textAlign: 'center', padding: '16px', backgroundColor: 'var(--color-bg)', borderRadius: '12px', border: '1px solid var(--color-border)', marginBottom: '24px' }}>
+            <div style={{ fontSize: '24px', marginBottom: '4px' }}>🚧</div>
+            <h3 style={{ color: 'var(--color-text)', margin: '0 0 4px 0', fontFamily: 'var(--font-display)', fontSize: '1.2rem' }}>
+              System Maintenance
+            </h3>
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)', margin: 0 }}>
+              Only authorized staff (admin, teacher, owner) may sign in at this time.
+            </p>
+          </div>
+        )}
+
+        {mode === 'signup' && (settings?.maintenanceMode || isSignupDisabled) ? (
           <div style={{ textAlign: 'center', padding: '24px', backgroundColor: 'var(--color-bg)', borderRadius: '12px', border: '1px solid var(--color-border)', marginBottom: '24px' }}>
             <div style={{ fontSize: '32px', marginBottom: '8px' }}>🚧</div>
             <h3 style={{ color: 'var(--color-text)', margin: '0 0 8px 0', fontFamily: 'var(--font-display)' }}>
-              {settings?.maintenanceMode ? 'System Maintenance' : 'Signups Paused'}
+              Signups Paused
             </h3>
             <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)', margin: 0 }}>
-              {settings?.maintenanceMode 
-                ? 'We are currently undergoing scheduled maintenance. New registrations are temporarily paused.' 
-                : 'We are currently not accepting new user registrations. Please check back later!'}
+              We are currently not accepting new user registrations. Please check back later!
             </p>
           </div>
         ) : (
@@ -308,7 +318,7 @@ export default function Auth() {
           type="button"
           className={styles.googleBtn}
           onClick={handleGoogleAuth}
-          disabled={loading || (mode === 'signup' && isSignupDisabled)}
+          disabled={loading || settings?.maintenanceMode || (mode === 'signup' && isSignupDisabled)}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
         >

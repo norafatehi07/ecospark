@@ -275,7 +275,7 @@ export default function Tasks() {
         <div>
           <h1 className={styles.title}>Eco Tasks</h1>
           <p className={styles.subtitle}>
-            {doneCount} of {tasks.length} completed today
+            {profile?.totalTasksCompleted || 0} tasks completed
           </p>
         </div>
         <div className={styles.progressRing}>

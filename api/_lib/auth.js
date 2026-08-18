@@ -66,7 +66,7 @@ export async function requireUser(req) {
     claimRole === 'owner' ||
     (decoded.email_verified === true && decoded.email === OWNER_EMAIL);
 
-  const role = isOwner ? 'owner' : claimRole || mirrorRole || 'student';
+  const role = isOwner ? 'owner' : claimRole || 'student';
 
   return {
     uid,

@@ -1,12 +1,13 @@
 // src/App.jsx
 import React, { useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './lib/firebase';
 import { useAuthStore } from './store/authStore';
 import { useUiStore } from './store/uiStore';
 import { subscribeUserProfile, subscribeGlobalSettings } from './services/firestoreService';
 import { useSettingsStore } from './store/settingsStore';
+import toast from 'react-hot-toast';
 
 import AppShell from './components/layout/AppShell';
 import ProtectedRoute from './components/common/ProtectedRoute';
@@ -146,8 +147,19 @@ export default function App() {
         unsubProfile = subscribeUserProfile(firebaseUser.uid, (profile) => {
           if (profile?.banned) {
             // Kick banned user out instantly
-            import('firebase/auth').then(({ signOut }) => signOut(auth));
-            import('react-hot-toast').then(({ default: toast }) => toast.error('This account has been banned by an administrator.'));
+            signOut(auth);
+            toast.error('This account has been banned by an administrator.');
+            return;
+          }
+
+          // Kick non-admin users out instantly if they sign in during maintenance mode
+          const settings = useSettingsStore.getState().settings;
+          const OWNER_EMAIL = 'amiteshyadav.yt@gmail.com';
+          const isPrivileged = (profile?.role && ['admin', 'teacher', 'owner'].includes(profile.role)) || 
+                               (firebaseUser.email === OWNER_EMAIL);
+          if (settings?.maintenanceMode && !isPrivileged) {
+            signOut(auth);
+            toast('System maintenance in progress. You cannot log in right now.', { icon: '🚧', duration: 5000 });
             return;
           }
           
@@ -174,17 +186,41 @@ export default function App() {
     };
   }, []);
 
-  // Listen to global settings
+  // Listen to global settings — and kick non-admin users if maintenance activates
   useEffect(() => {
     return subscribeGlobalSettings((s) => {
       setSettings(s);
+
+      // If maintenance just turned on, sign out any non-admin user instantly
+      if (s.maintenanceMode) {
+        const currentUser = useAuthStore.getState().user;
+        const currentProfile = useAuthStore.getState().profile;
+        const OWNER_EMAIL = 'amiteshyadav.yt@gmail.com';
+        const role = currentProfile?.role;
+        console.log('[MAINTENANCE] Mode is ON. User:', currentUser?.email, 'Role:', role, 'Profile:', currentProfile);
+        
+        // Only skip signout if user is positively confirmed as admin/teacher/owner OR is the owner email
+        const isPrivileged = (role && ['admin', 'teacher', 'owner'].includes(role)) || 
+                             (currentUser?.email === OWNER_EMAIL);
+        
+        if (currentUser && !isPrivileged) {
+          console.log('[MAINTENANCE] Signing out user:', currentUser.email);
+          signOut(auth);
+          toast('System maintenance in progress. You have been signed out.', { icon: '🚧', duration: 5000 });
+        } else {
+          console.log('[MAINTENANCE] User is admin/staff, skipping signout');
+        }
+      } else {
+        console.log('[MAINTENANCE] Mode is OFF');
+      }
     });
   }, []);
 
   if (loading || !settings) return <LoadingScreen />;
 
-  // If maintenance mode is active and user is logged in as a normal student, show maintenance screen
-  const isMaintenanceActiveForUser = settings.maintenanceMode && profile && profile.role !== 'admin' && profile.role !== 'teacher';
+  // If maintenance mode is active and user is logged in as a normal student, sign them out instantly
+  // so they land on the Landing page (and Auth page will show the maintenance banner)
+  const isMaintenanceActiveForUser = settings.maintenanceMode && profile && !['admin', 'teacher', 'owner'].includes(profile.role);
 
   return (
     <React.Suspense fallback={<LoadingScreen />}>
@@ -193,34 +229,30 @@ export default function App() {
         <Route
           path="/*"
           element={
-            user ? (
+            user && !isMaintenanceActiveForUser ? (
               <ProtectedRoute>
-                {isMaintenanceActiveForUser ? (
-                  <MaintenanceScreen />
-                ) : (
-                  <AppShell>
-                    <Routes location={location} key={location.pathname}>
-                      <Route path="/" element={<Home />} />
-                      <Route path="/news" element={<News />} />
-                      <Route path="/tasks" element={<Tasks />} />
-                      <Route path="/leaderboard" element={<Leaderboard />} />
-                      <Route path="/rewards" element={<Rewards />} />
-                      {(settings.arenaEnabled ?? true) && (
-                        <Route path="/arena" element={<Arena />} />
-                      )}
-                      <Route path="/community" element={<Community />} />
-                      <Route path="/profile" element={<Profile />} />
-                      <Route path="/user/:id" element={<UserProfile />} />
-                      <Route path="/messages" element={<Messages />} />
-                      <Route path="/messages/:chatId" element={<Messages />} />
-                      <Route path="/notifications" element={<Notifications />} />
-                      <Route path="/settings" element={<Settings />} />
-                      <Route path="/admin" element={<Admin />} />
-                      <Route path="/about" element={<About />} />
-                      <Route path="*" element={<Navigate to="/" replace />} />
-                    </Routes>
-                  </AppShell>
-                )}
+                <AppShell>
+                  <Routes location={location} key={location.pathname}>
+                    <Route path="/" element={<Home />} />
+                    <Route path="/news" element={<News />} />
+                    <Route path="/tasks" element={<Tasks />} />
+                    <Route path="/leaderboard" element={<Leaderboard />} />
+                    <Route path="/rewards" element={<Rewards />} />
+                    {(settings.arenaEnabled ?? true) && (
+                      <Route path="/arena" element={<Arena />} />
+                    )}
+                    <Route path="/community" element={<Community />} />
+                    <Route path="/profile" element={<Profile />} />
+                    <Route path="/user/:id" element={<UserProfile />} />
+                    <Route path="/messages" element={<Messages />} />
+                    <Route path="/messages/:chatId" element={<Messages />} />
+                    <Route path="/notifications" element={<Notifications />} />
+                    <Route path="/settings" element={<Settings />} />
+                    <Route path="/admin" element={<Admin />} />
+                    <Route path="/about" element={<About />} />
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                  </Routes>
+                </AppShell>
               </ProtectedRoute>
             ) : (
               <Landing />
