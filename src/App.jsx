@@ -29,6 +29,7 @@ const Notifications = React.lazy(() => import('./pages/Notifications'));
 const Admin = React.lazy(() => import('./pages/Admin'));
 const About = React.lazy(() => import('./pages/About'));
 const Landing = React.lazy(() => import('./pages/Landing'));
+const Landing3D = React.lazy(() => import('./pages/Landing3D'));
 const News = React.lazy(() => import('./pages/News'));
 
 function LoadingScreen() {
@@ -255,7 +256,7 @@ export default function App() {
                 </AppShell>
               </ProtectedRoute>
             ) : (
-              <Landing />
+              settings?.landingPageStyle === '3d' ? <Landing3D /> : <Landing />
             )
           }
         />

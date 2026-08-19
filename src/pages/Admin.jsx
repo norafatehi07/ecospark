@@ -1036,6 +1036,69 @@ export default function Admin() {
                 />
               </div>
 
+              {/* LANDING PAGE STYLE TOGGLE */}
+              <div style={{ marginTop: '8px', padding: '20px 24px', background: 'rgba(16,185,129,0.04)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                  <PremiumIcon icon={Globe} color="emerald" size={20} />
+                  <h4 style={{ margin: 0, fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-text)' }}>Landing Page Style</h4>
+                </div>
+                <p style={{ margin: '0 0 16px', fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>
+                  Choose which landing page visitors see before signing in.
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  {/* Classic option */}
+                  <label
+                    style={{
+                      display: 'flex', flexDirection: 'column', gap: '8px',
+                      padding: '16px', borderRadius: '12px', cursor: 'pointer',
+                      border: `2px solid ${(!settingsData.landingPageStyle || settingsData.landingPageStyle === 'classic') ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                      background: (!settingsData.landingPageStyle || settingsData.landingPageStyle === 'classic') ? 'rgba(16,185,129,0.08)' : 'var(--color-surface-hover)',
+                      transition: 'border-color 0.2s, background 0.2s',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <input
+                        type="radio"
+                        name="landingPageStyle"
+                        value="classic"
+                        checked={!settingsData.landingPageStyle || settingsData.landingPageStyle === 'classic'}
+                        onChange={() => setSettingsData({...settingsData, landingPageStyle: 'classic'})}
+                        style={{ width: '18px', height: '18px', accentColor: 'var(--color-primary)' }}
+                      />
+                      <span style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--color-text)' }}>🎨 Classic</span>
+                    </div>
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)', lineHeight: '1.4' }}>
+                      The current React-based landing with video background, animated text, and stat cards.
+                    </span>
+                  </label>
+                  {/* 3D Immersive option */}
+                  <label
+                    style={{
+                      display: 'flex', flexDirection: 'column', gap: '8px',
+                      padding: '16px', borderRadius: '12px', cursor: 'pointer',
+                      border: `2px solid ${settingsData.landingPageStyle === '3d' ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                      background: settingsData.landingPageStyle === '3d' ? 'rgba(16,185,129,0.08)' : 'var(--color-surface-hover)',
+                      transition: 'border-color 0.2s, background 0.2s',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <input
+                        type="radio"
+                        name="landingPageStyle"
+                        value="3d"
+                        checked={settingsData.landingPageStyle === '3d'}
+                        onChange={() => setSettingsData({...settingsData, landingPageStyle: '3d'})}
+                        style={{ width: '18px', height: '18px', accentColor: 'var(--color-primary)' }}
+                      />
+                      <span style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--color-text)' }}>🌿 3D Immersive</span>
+                    </div>
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)', lineHeight: '1.4' }}>
+                      A cinematic WebGL experience with procedural moss, parallax depth, and liquid-metal buttons.
+                    </span>
+                  </label>
+                </div>
+              </div>
+
               <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: '16px' }}>
                 <button type="submit" className={styles.approveBtn} style={{ width: 'auto', padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <PremiumIcon icon={Save} color="white" size={16} /> Save Global Settings
