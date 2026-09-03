@@ -2,14 +2,14 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../store/authStore';
 import { updateUserProfile } from '../services/firestoreService';
-import { generateArenaTrivia } from '../services/aiService';
 import { increment } from 'firebase/firestore';
 import toast from 'react-hot-toast';
 import styles from './Arena.module.css';
-import { Flame, Brain, Target, Zap, Clock, Coins, CheckCircle2, History, Sprout, Swords, Trophy, Lock, Unlock, ChevronRight, Leaf, Star, TrendingUp, Users, AlertCircle, ShieldCheck } from 'lucide-react';
+import { Flame, Target, Zap, Clock, Coins, CheckCircle2, History, Sprout, Swords, Trophy, Lock, Unlock, TrendingUp, Users, AlertCircle, ShieldCheck, Bomb, Dices } from 'lucide-react';
 import PremiumIcon from '../components/common/PremiumIcon';
-import { MOCK_TRIVIA } from '../constants/arenaData';
 import { useSettingsStore } from '../store/settingsStore';
+import MinesGame from '../components/casino/MinesGame';
+import DiceGame from '../components/casino/DiceGame';
 import {
   subscribeActiveMarkets,
   subscribeRecentMarkets,
@@ -292,23 +292,31 @@ function MarketCard({ market, profile, selectedOption, setSelectedOption, betAmo
 }
 
 export default function Arena() {
-  const { profile } = useAuthStore();
+  const { profile, setProfile } = useAuthStore();
   const settings = useSettingsStore(s => s.settings) || {};
 
+  // Casino games hit api/_lib/casino.js directly (not updateUserProfile), so
+  // mirror the server's authoritative balanceAfter into the store immediately
+  // — the live users/{uid} onSnapshot in App.jsx will confirm the same value
+  // a moment later, this just removes the visible lag before it arrives.
+  const handleCasinoBalanceChange = useCallback((balanceAfter) => {
+    setProfile(profile ? { ...profile, spendableBalance: balanceAfter } : profile);
+  }, [profile, setProfile]);
+
   const oracleOn  = settings.arenaOracleEnabled  ?? true;
-  const triviaOn  = settings.arenaTriviaEnabled  ?? true;
   const spinOn    = settings.arenaSpinEnabled    ?? true;
   const stakingOn = settings.arenaStakingEnabled ?? true;
 
   const TABS = [
+    { id: 'mines',    label: 'Mines',            icon: Bomb    },
+    { id: 'dice',     label: 'Dice',              icon: Dices   },
     ...(oracleOn  ? [{ id: 'oracle',   label: 'The Oracle',       icon: Target  }] : []),
-    ...(triviaOn  ? [{ id: 'trivia',   label: 'Trivia',           icon: Brain   }] : []),
     ...(spinOn    ? [{ id: 'spin',     label: 'Spin to Win',      icon: Zap     }] : []),
     ...(stakingOn ? [{ id: 'staking',  label: 'Staking Pool',     icon: Sprout  }] : []),
     ...(oracleOn  ? [{ id: 'history',  label: 'Bets & History',   icon: History }] : []),
   ];
 
-  const [activeTab, setActiveTab] = useState(TABS[0]?.id || 'spin');
+  const [activeTab, setActiveTab] = useState(TABS[0]?.id || 'mines');
 
   // Oracle
   const [betAmounts, setBetAmounts]     = useState({});
@@ -320,16 +328,6 @@ export default function Arena() {
   const [cryptoPrices, setCryptoPrices] = useState(null);
   const [settling, setSettling]         = useState(false);
   const now = useNow(30000);
-
-  // Trivia
-  const [triviaActive, setTriviaActive]     = useState(false);
-  const [currentQIndex, setCurrentQIndex]   = useState(0);
-  const [triviaScore, setTriviaScore]       = useState(0);
-  const [triviaFinished, setTriviaFinished] = useState(false);
-  const [triviaQuestions, setTriviaQuestions] = useState([]);
-  const [loadingTrivia, setLoadingTrivia]   = useState(false);
-  const [selectedAnswer, setSelectedAnswer] = useState(null);
-  const [showFact, setShowFact]             = useState(false);
 
   // Spin — track actual cumulative degrees for correct landing
   const [spinRotation, setSpinRotation] = useState(0);
@@ -502,60 +500,6 @@ export default function Arena() {
     toast.success(`Claimed ${stake.potentialReturn} pts!`, { id: 'claim' });
   };
 
-  // ── TRIVIA ───────────────────────────────────────────────────────────────────
-  const startTrivia = async () => {
-    const ok = await deductPoints(100);
-    if (!ok) return;
-    setLoadingTrivia(true);
-    toast.loading('AI is generating fresh eco questions...', { id: 'trivia' });
-    try {
-      const questions = await generateArenaTrivia();
-      setTriviaQuestions(questions);
-    } catch {
-      setTriviaQuestions(MOCK_TRIVIA);
-    } finally {
-      toast.dismiss('trivia');
-      setLoadingTrivia(false);
-      setTriviaActive(true);
-      setCurrentQIndex(0);
-      setTriviaScore(0);
-      setTriviaFinished(false);
-      setSelectedAnswer(null);
-      setShowFact(false);
-    }
-  };
-
-  const handleTriviaAnswer = (selectedIndex) => {
-    if (selectedAnswer !== null) return; // already answered
-    setSelectedAnswer(selectedIndex);
-    const q = triviaQuestions[currentQIndex];
-    const isCorrect = selectedIndex === q.correctIndex;
-    if (isCorrect) setTriviaScore(prev => prev + 1);
-    setShowFact(true);
-
-    setTimeout(() => {
-      setSelectedAnswer(null);
-      setShowFact(false);
-      if (currentQIndex + 1 < triviaQuestions.length) {
-        setCurrentQIndex(prev => prev + 1);
-      } else {
-        finishTrivia(triviaScore + (isCorrect ? 1 : 0));
-      }
-    }, isCorrect ? 1800 : 2200);
-  };
-
-  const finishTrivia = async (finalScore) => {
-    setTriviaFinished(true);
-    const reward = finalScore * 50;
-    if (reward > 0) {
-      await addPoints(reward);
-      toast.success(`Tournament Done! +${reward} pts 🏆`);
-    } else {
-      toast('Better luck next time!', { icon: '🌱' });
-    }
-    setTimeout(() => setTriviaActive(false), 3500);
-  };
-
   // ── SPIN ─────────────────────────────────────────────────────────────────────
   // Fixed spin math: pointer is at the top (12 o'clock = 0°).
   // We accumulate rotation so that the pointer always points to the correct segment.
@@ -650,6 +594,16 @@ export default function Arena() {
           transition={{ duration: 0.3, ease: 'easeOut' }}
           className={styles.tabContent}
         >
+
+          {/* ═══════════════ MINES ═══════════════ */}
+          {activeTab === 'mines' && (
+            <MinesGame balance={profile?.spendableBalance || 0} onBalanceChange={handleCasinoBalanceChange} />
+          )}
+
+          {/* ═══════════════ DICE ═══════════════ */}
+          {activeTab === 'dice' && (
+            <DiceGame balance={profile?.spendableBalance || 0} onBalanceChange={handleCasinoBalanceChange} />
+          )}
 
           {/* ═══════════════ ORACLE ═══════════════ */}
           {activeTab === 'oracle' && (
@@ -761,45 +715,6 @@ export default function Arena() {
           )}
 
 
-
-          {/* ═══════════════ TRIVIA ═══════════════ */}
-          {activeTab === 'trivia' && (
-            <div className={styles.triviaLobby}>
-              <div className={styles.triviaLobbyGlow} />
-              <div className={styles.triviaLobbyIcon}>
-                <PremiumIcon icon={Brain} color="sapphire" size={72} />
-              </div>
-              <h2 className={styles.triviaLobbyTitle}>Eco Brain Brawl</h2>
-              <p className={styles.triviaLobbyDesc}>
-                Test your environmental knowledge with AI-generated questions about sustainability, climate change, and eco news — fresh questions every round!
-              </p>
-              <div className={styles.triviaRules}>
-                <div className={styles.triviaRule}>
-                  <Coins size={20} style={{ color: '#f59e0b' }} />
-                  <span>100 pts entry fee</span>
-                </div>
-                <div className={styles.triviaRule}>
-                  <Star size={20} style={{ color: '#8b5cf6' }} />
-                  <span>50 pts per correct answer</span>
-                </div>
-                <div className={styles.triviaRule}>
-                  <Leaf size={20} style={{ color: '#10b981' }} />
-                  <span>Eco facts after each answer</span>
-                </div>
-              </div>
-              <button
-                className={styles.primaryBtn}
-                onClick={startTrivia}
-                disabled={loadingTrivia}
-              >
-                {loadingTrivia ? (
-                  <><span className={styles.btnSpinner} /> Generating questions...</>
-                ) : (
-                  <>Start Tournament <ChevronRight size={20} /></>
-                )}
-              </button>
-            </div>
-          )}
 
           {/* ═══════════════ SPIN ═══════════════ */}
           {activeTab === 'spin' && (
@@ -995,88 +910,6 @@ export default function Arena() {
           )}
 
         </motion.div>
-      </AnimatePresence>
-
-      {/* ═══════════ TRIVIA MODAL ═══════════ */}
-      <AnimatePresence>
-        {triviaActive && (
-          <motion.div
-            className={styles.triviaOverlay}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <motion.div
-              className={styles.triviaModal}
-              initial={{ scale: 0.9, y: 40 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              transition={{ type: 'spring', bounce: 0.3 }}
-            >
-              {triviaFinished ? (
-                <div className={styles.triviaFinished}>
-                  <PremiumIcon icon={Trophy} color="gold" size={72} />
-                  <h2>Tournament Complete!</h2>
-                  <p className={styles.triviaScore}>{triviaScore} / {triviaQuestions.length} correct</p>
-                  <p style={{ color: '#10b981', fontWeight: 'bold', fontSize: '1.3rem' }}>
-                    +{triviaScore * 50} pts earned!
-                  </p>
-                </div>
-              ) : triviaQuestions.length > 0 ? (
-                <>
-                  <div className={styles.triviaProgress}>
-                    <div className={styles.triviaProgressBar} style={{ width: `${((currentQIndex) / triviaQuestions.length) * 100}%` }} />
-                  </div>
-                  <div className={styles.triviaHeader}>
-                    <span className={styles.triviaQCount}>Question {currentQIndex + 1} of {triviaQuestions.length}</span>
-                    <span className={styles.triviaScoreDisp}><Trophy size={14} /> {triviaScore} pts</span>
-                    {triviaQuestions[currentQIndex]?.topic && (
-                      <span className={styles.triviaTopic}><Leaf size={12} /> {triviaQuestions[currentQIndex].topic}</span>
-                    )}
-                  </div>
-
-                  <h2 className={styles.triviaQuestion}>
-                    {triviaQuestions[currentQIndex].question}
-                  </h2>
-
-                  <div className={styles.triviaOptions}>
-                    {triviaQuestions[currentQIndex].options.map((opt, idx) => {
-                      const isCorrect = idx === triviaQuestions[currentQIndex].correctIndex;
-                      const isSelected = selectedAnswer === idx;
-                      let btnClass = styles.triviaOptionBtn;
-                      if (selectedAnswer !== null) {
-                        if (isCorrect) btnClass = `${styles.triviaOptionBtn} ${styles.optionCorrect}`;
-                        else if (isSelected) btnClass = `${styles.triviaOptionBtn} ${styles.optionWrong}`;
-                      }
-                      return (
-                        <button
-                          key={idx}
-                          className={btnClass}
-                          onClick={() => handleTriviaAnswer(idx)}
-                          disabled={selectedAnswer !== null}
-                        >
-                          <span className={styles.optionLetter}>{String.fromCharCode(65 + idx)}</span>
-                          {opt}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {showFact && triviaQuestions[currentQIndex]?.fact && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className={styles.ecoFact}
-                    >
-                      <Leaf size={16} style={{ color: '#10b981', flexShrink: 0 }} />
-                      <span>{triviaQuestions[currentQIndex].fact}</span>
-                    </motion.div>
-                  )}
-                </>
-              ) : null}
-            </motion.div>
-          </motion.div>
-        )}
       </AnimatePresence>
     </div>
   );
