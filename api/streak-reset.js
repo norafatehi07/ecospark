@@ -1,9 +1,10 @@
 // api/streak-reset.js — Nightly cron job (runs at midnight UTC via Vercel Cron)
-import admin from 'firebase-admin';
+import { initializeApp, cert, getApps } from 'firebase-admin/app';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
+if (!getApps().length) {
+  initializeApp({
+    credential: cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
       privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
@@ -11,7 +12,7 @@ if (!admin.apps.length) {
   });
 }
 
-const db = admin.firestore();
+const db = getFirestore();
 
 export default async function handler(req, res) {
   // Verify this is a legitimate cron call from Vercel
@@ -40,7 +41,7 @@ export default async function handler(req, res) {
       if (lastActivity < twoDaysAgo) {
         batch.update(doc.ref, {
           streak: 0,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         });
         resetCount++;
       }
@@ -53,7 +54,7 @@ export default async function handler(req, res) {
           title: '🔥 Your streak is at risk!',
           body: `You haven't logged a task today. Your ${user.streak}-day streak will reset at midnight!`,
           read: false,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: FieldValue.serverTimestamp(),
         });
         atRiskCount++;
       }
@@ -76,13 +77,13 @@ export default async function handler(req, res) {
         const rewardPoints = rewards[index];
         const user = docSnap.data();
         let updates = {
-          points: admin.firestore.FieldValue.increment(rewardPoints),
-          lifetimePoints: admin.firestore.FieldValue.increment(rewardPoints),
-          spendableBalance: admin.firestore.FieldValue.increment(rewardPoints),
+          points: FieldValue.increment(rewardPoints),
+          lifetimePoints: FieldValue.increment(rewardPoints),
+          spendableBalance: FieldValue.increment(rewardPoints),
         };
         if (index === 0) {
           // Give 1st place a Weekly Champion badge
-          updates.badges = admin.firestore.FieldValue.arrayUnion('Weekly Champion');
+          updates.badges = FieldValue.arrayUnion('Weekly Champion');
         }
         batch.update(docSnap.ref, updates);
 
@@ -94,7 +95,7 @@ export default async function handler(req, res) {
           title: `🏆 You placed #${index + 1} this week!`,
           body: `You've been awarded ${rewardPoints} bonus points for your amazing eco-efforts!`,
           read: false,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: FieldValue.serverTimestamp(),
         });
       });
 
