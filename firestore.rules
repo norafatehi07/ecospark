@@ -207,6 +207,30 @@ service cloud.firestore {
       allow write: if isStaff();
     }
 
+    // ── CASINO (Mines/Dice/Crash) — provably fair, server-written ──────────
+    // The active server seed is the entire trust boundary for every game
+    // result: if a client could read it, every future round on that seed
+    // pair would be predictable. So provablyFairSecrets is write:false AND
+    // read:false — not even the owning user may read their own doc; the only
+    // door out of it is seedRotate, which reveals the RETIRED seed into
+    // provablyFairPublic once every round played on it is already over.
+    match /provablyFairSecrets/{userId} {
+      allow read, write: if false;
+    }
+
+    // Commitment hash, current client seed/nonce, and past revealed seeds —
+    // all safe to read because nothing here is secret until a round settles.
+    match /provablyFairPublic/{userId} {
+      allow read: if isSelf(userId) || isStaff();
+      allow write: if false;
+    }
+
+    match /casinoRounds/{roundId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow read: if isStaff();
+      allow write: if false;
+    }
+
     // ── COMMUNITY POSTS ────────────────────────────────────────────────────
     match /community/{postId} {
       allow read: if isAuthenticated();

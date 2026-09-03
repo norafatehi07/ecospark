@@ -40,6 +40,8 @@ export const LEDGER_TYPES = new Set([
   'owner_adjustment',
   'reversal',
   'bonus',
+  'casino_bet',
+  'casino_payout',
 ]);
 
 /**

@@ -17,7 +17,7 @@ import { db } from '../lib/firebase';
 import {
   collection, getDocs, doc, getDoc, setDoc, updateDoc, query,
   where, orderBy, limit, writeBatch, runTransaction, onSnapshot,
-  serverTimestamp, increment
+  serverTimestamp, increment, arrayUnion
 } from 'firebase/firestore';
 import { generateOracleMarkets, settleOracleMarket } from './aiService';
 
@@ -335,68 +335,75 @@ export async function placeBetOnMarket({ userId, profile, marketId, optionId, am
   if (!profile || !userId) throw new Error('Not authenticated');
   if (amount < MIN_BET) throw new Error(`Minimum bet is ${MIN_BET} pts`);
   if (amount > MAX_BET) throw new Error(`Maximum bet is ${MAX_BET.toLocaleString()} pts per market`);
-  if ((profile.spendableBalance || 0) < amount) throw new Error('Not enough spendable points');
 
   const marketRef = doc(db, MARKETS_COL, marketId);
-  const marketSnap = await getDoc(marketRef);
-  if (!marketSnap.exists()) throw new Error('Market not found');
-
-  const market = { id: marketSnap.id, ...marketSnap.data() };
-  if (market.status !== 'active') throw new Error('Market is no longer accepting bets');
-  if (new Date(market.endTime) <= new Date()) throw new Error('Market has closed for new bets');
-  
-  // Ensure options is an array
-  if (!Array.isArray(market.options)) throw new Error('Market options data is corrupted');
-  
-  const option = market.options.find(o => o.id === optionId);
-  if (!option) throw new Error('Invalid option');
-
-  // Live odds at the moment of betting.
-  const updatedOptions = recalculateMultipliers(market.options);
-  const currentOpt = updatedOptions.find(o => o.id === optionId);
-  const multiplier = currentOpt?.multiplier || option.initialMultiplier || 2.0;
-  const potentialWin = Math.round(amount * multiplier);
-
-  const batch = writeBatch(db);
-
-  const optionUpdates = {};
-  market.options.forEach((o, idx) => {
-    if (o.id === optionId) optionUpdates[`options.${idx}.totalStaked`] = increment(amount);
-  });
-  batch.update(marketRef, {
-    ...optionUpdates,
-    totalStaked: increment(amount),
-    betCount: increment(1),
-  });
-
-  const newBet = {
-    id: `bet_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-    marketId,
-    title: market.title,
-    category: market.category,
-    emoji: market.emoji || '🔮',
-    kind: market.kind || 'event',
-    optionId,
-    option: option.label,
-    amount,
-    multiplier,
-    potentialWin,
-    status: 'pending',
-    date: new Date().toISOString(),
-    settledAt: null,
-    resultReason: null,
-    endTime: market.endTime,
-  };
-
   const userRef = doc(db, USERS_COL, userId);
-  const existingBets = profile.arenaBets || [];
-  batch.update(userRef, {
-    spendableBalance: increment(-amount),
-    arenaBets: [newBet, ...existingBets],
-  });
 
-  await batch.commit();
-  return { bet: newBet, multiplier, potentialWin };
+  // A transaction that reads-then-writes the WHOLE options array, rather than
+  // a dotted path like `options.0.totalStaked`. Firestore has no way to index
+  // into an array by position in an update() call — that path silently no-ops
+  // against the security rules' `options.size()` check (which only ever sees
+  // a same-size array come back) and against a same-shape array in general,
+  // so bets looked "placed" but odds/volume never actually moved. This is the
+  // one supported pattern: read the array, modify it in memory, write it back.
+  return runTransaction(db, async (tx) => {
+    const [marketSnap, userSnap] = await Promise.all([tx.get(marketRef), tx.get(userRef)]);
+    if (!marketSnap.exists()) throw new Error('Market not found');
+    if (!userSnap.exists()) throw new Error('Account not found');
+
+    const market = { id: marketSnap.id, ...marketSnap.data() };
+    const user = userSnap.data();
+
+    if ((user.spendableBalance || 0) < amount) throw new Error('Not enough spendable points');
+    if (market.status !== 'active') throw new Error('Market is no longer accepting bets');
+    if (new Date(market.endTime) <= new Date()) throw new Error('Market has closed for new bets');
+    if (!Array.isArray(market.options)) throw new Error('Market options data is corrupted');
+
+    const option = market.options.find(o => o.id === optionId);
+    if (!option) throw new Error('Invalid option');
+
+    // Live odds at the moment of betting.
+    const liveOptions = recalculateMultipliers(market.options);
+    const currentOpt = liveOptions.find(o => o.id === optionId);
+    const multiplier = currentOpt?.multiplier || option.initialMultiplier || 2.0;
+    const potentialWin = Math.round(amount * multiplier);
+
+    const updatedOptions = market.options.map(o =>
+      o.id === optionId ? { ...o, totalStaked: (o.totalStaked || 0) + amount } : o
+    );
+
+    tx.update(marketRef, {
+      options: updatedOptions,
+      totalStaked: increment(amount),
+      betCount: increment(1),
+    });
+
+    const newBet = {
+      id: `bet_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      marketId,
+      title: market.title,
+      category: market.category,
+      emoji: market.emoji || '🔮',
+      kind: market.kind || 'event',
+      optionId,
+      option: option.label,
+      amount,
+      multiplier,
+      potentialWin,
+      status: 'pending',
+      date: new Date().toISOString(),
+      settledAt: null,
+      resultReason: null,
+      endTime: market.endTime,
+    };
+
+    tx.update(userRef, {
+      spendableBalance: increment(-amount),
+      arenaBets: [newBet, ...(user.arenaBets || [])],
+    });
+
+    return { bet: newBet, multiplier, potentialWin };
+  });
 }
 
 // ─── Settlement ──────────────────────────────────────────────────────────────

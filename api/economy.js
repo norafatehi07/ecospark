@@ -32,6 +32,17 @@ import {
   oracleStake,
   oracleVoid,
 } from './_lib/arena.js';
+import {
+  seedInfo,
+  seedRotate,
+  minesStart,
+  minesReveal,
+  minesCashout,
+  diceRoll,
+  crashStart,
+  crashPeek,
+  crashCashout,
+} from './_lib/casino.js';
 
 const REWARD_BY_ID = REWARDS_DB.reduce((acc, r) => ((acc[r.id] = r), acc), {});
 
@@ -297,6 +308,16 @@ const ACTIONS = {
   arena_pool_claim: poolClaim,
   arena_oracle_stake: oracleStake,
   arena_oracle_void: oracleVoid,
+  // Casino — Mines/Dice/Crash, provably fair (api/_lib/casino.js + provablyFair.js).
+  casino_seed_info: seedInfo,
+  casino_seed_rotate: seedRotate,
+  casino_mines_start: minesStart,
+  casino_mines_reveal: minesReveal,
+  casino_mines_cashout: minesCashout,
+  casino_dice_roll: diceRoll,
+  casino_crash_start: crashStart,
+  casino_crash_peek: crashPeek,
+  casino_crash_cashout: crashCashout,
 };
 
 export default async function handler(req, res) {
